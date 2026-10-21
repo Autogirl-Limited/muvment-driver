@@ -42,3 +42,8 @@ next-env.d.ts
 
 # local backups
 .env.local.bak
+!.env.example
+
+# generated service worker
+public/sw.js
+public/swe-worker-*.js
