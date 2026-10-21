@@ -21,9 +21,13 @@ export const metadata: Metadata = {
   description: "Professional driver portal for Muvment trips, checklists and navigation.",
   applicationName: "Muvment Driver",
   manifest: "/manifest.webmanifest",
+  // "default" lets iOS colour the status bar from the theme-color meta and pick
+  // dark or light glyphs to match; "black-translucent" would force white text
+  // even on the light theme. iOS reads this only when the app is added to the
+  // Home Screen, so a reinstall is needed to pick up a change.
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
+    statusBarStyle: "default",
     title: "Muvment",
   },
   formatDetection: { telephone: false },
@@ -44,10 +48,8 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#F5F6F8" },
-    { media: "(prefers-color-scheme: dark)", color: "#0B1220" },
-  ],
+  // theme-color is owned by ThemeProvider/ThemeScript so it follows the in-app
+  // theme toggle and per-screen header colours, not only the system setting.
 };
 
 export default function RootLayout({

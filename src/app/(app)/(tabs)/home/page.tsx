@@ -20,11 +20,16 @@ import { getPreRideStarterStepRoute } from "@/lib/utils/checklistNavigation";
 import { toDriverTripCardModel } from "@/lib/utils/driverTrips";
 import { getAvailablePreRidePilotReportTrip } from "@/lib/utils/pilotReports";
 import { getUserDisplayName, getUserInitials } from "@/lib/utils/userProfile";
+import { useScreenThemeColor } from "@/providers/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
+
+/** Top of the header gradient, so the status bar blends into it. */
+const HOME_HEADER_TOP_COLOR = "#516C9F";
 
 export default function HomePage() {
   const router = useRouter();
   const toast = useToast();
+  useScreenThemeColor(HOME_HEADER_TOP_COLOR);
   const currentUserQuery = useCurrentUser();
   const driverTripStatisticsQuery = useDriverTripStatistics();
   const driverTripsQuery = useDriverTrips({ page: 0, size: 20 });

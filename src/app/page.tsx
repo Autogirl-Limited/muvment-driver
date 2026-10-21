@@ -5,10 +5,15 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 
+import { useScreenThemeColor } from "@/providers/ThemeProvider";
+
+const SPLASH_COLOR = "#1D2739";
+
 /** Splash: brand mark on navy, then hands off to Home or Login once the session is known. */
 export default function SplashPage() {
   const router = useRouter();
   const { status, data } = useSession();
+  useScreenThemeColor(SPLASH_COLOR);
 
   useEffect(() => {
     if (status === "loading") {

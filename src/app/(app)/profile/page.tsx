@@ -9,6 +9,10 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import { getUserDisplayName, getUserInitials } from "@/lib/utils/userProfile";
+import { useScreenThemeColor } from "@/providers/ThemeProvider";
+
+/** Matches the navy profile header (--navy-mid). */
+const PROFILE_HEADER_COLOR = "#1E3A5F";
 
 const InfoRow = ({ label, value, verified }: { label: string; value: string; verified?: boolean }) => (
   <div className="flex items-center justify-between gap-4 px-4 py-3">
@@ -21,6 +25,7 @@ const InfoRow = ({ label, value, verified }: { label: string; value: string; ver
 );
 
 export default function ProfilePage() {
+  useScreenThemeColor(PROFILE_HEADER_COLOR);
   const currentUserQuery = useCurrentUser();
   const currentUser = currentUserQuery.data?.data;
   const profileErrorMessage = getApiErrorMessage(currentUserQuery.error);
