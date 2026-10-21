@@ -62,6 +62,6 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     // Everything except Next internals, static files, the service worker and the API routes.
-    "/((?!api/auth|api/mock|_next/static|_next/image|icons|brand|favicon.png|manifest.webmanifest|sw.js|swe-worker.*|workbox-.*).*)",
+    "/((?!api/auth|api/mock|_next/static|_next/image|icons|brand|favicon.ico|favicon.svg|apple-touch-icon.png|manifest.webmanifest|sw.js|swe-worker.*|workbox-.*).*)",
   ],
 };

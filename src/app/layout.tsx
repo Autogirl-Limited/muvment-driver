@@ -27,9 +27,14 @@ export const metadata: Metadata = {
     title: "Muvment",
   },
   formatDetection: { telephone: false },
+  // Same icon set as the customer app (muvment-customer) so both Muvment apps
+  // share one identity on the home screen and in the browser tab.
   icons: {
-    icon: [{ url: "/favicon.png" }],
-    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    apple: "/apple-touch-icon.png",
   },
 };
 
