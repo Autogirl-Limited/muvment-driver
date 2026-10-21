@@ -141,9 +141,7 @@ const getPostRideChecklistAggregateQueryKey = (trackerId?: string) => [
   trackerId,
 ];
 
-const createEmptyPreRideChecklistSummaryResponse = (
-  _trackerId: string,
-): PreRideChecklistSummaryResponse => ({
+const createEmptyPreRideChecklistSummaryResponse = (): PreRideChecklistSummaryResponse => ({
   data: {
     driverPhoto: {
       photosCaptured: 0,
@@ -240,7 +238,7 @@ export const usePreRideChecklistSummary = (
         return response;
       }
 
-      return createEmptyPreRideChecklistSummaryResponse(trackerId);
+      return createEmptyPreRideChecklistSummaryResponse();
     },
     enabled: Boolean(trackerId) && (options.enabled ?? true),
     retry: false,
