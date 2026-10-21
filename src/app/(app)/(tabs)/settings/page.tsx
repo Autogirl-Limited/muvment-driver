@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardList,
+  Download,
   FileText,
   List,
   Lock,
@@ -34,6 +35,7 @@ import {
   useDriverNotificationSettings,
   useToggleDriverNotificationSettings,
 } from "@/lib/api/hooks/useDriverSettings";
+import { useInstallPrompt } from "@/providers/InstallPromptProvider";
 import { useTheme, type ThemePreference } from "@/providers/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
 
@@ -130,6 +132,7 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const notificationSettingsQuery = useDriverNotificationSettings();
   const toggleDriverNotificationSettings = useToggleDriverNotificationSettings();
+  const installPrompt = useInstallPrompt();
   const [locationPermission, setLocationPermission] = useState<PermissionStatus>("unknown");
   const [isLocationLoading, setLocationLoading] = useState(false);
   const [pushPermission, setPushPermission] = useState<PermissionStatus>("unknown");
@@ -247,6 +250,22 @@ export default function SettingsPage() {
       <DashboardHeader title="Settings" />
 
       <div className="space-y-6 px-5 pt-1">
+        {installPrompt.isEligible && (
+          <ListGroup>
+            <ListRow
+              icon={<Download size={18} />}
+              iconTone="accent"
+              title="Install app on this phone"
+              description={
+                installPrompt.environment.platform === "ios"
+                  ? "Add Muvment Driver to your Home Screen"
+                  : "Get the full-screen app with one tap"
+              }
+              onClick={installPrompt.open}
+            />
+          </ListGroup>
+        )}
+
         <ListGroup header="Preferences">
           <ThemeSelector />
           <ListRow

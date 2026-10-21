@@ -204,17 +204,22 @@ export const Sheet = ({ open, onClose, children, title, ariaLabel }: SheetProps)
           paddingBottom: "calc(var(--safe-bottom) + 24px)",
           transform: `translateY(${offset}px)`,
           transition: dragging ? "none" : "transform var(--dur) var(--ease-spring)",
-          touchAction: "none",
         }}
         onClick={(event) => event.stopPropagation()}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
       >
-        <div className="mx-auto mb-4 mt-1 h-1.5 w-11 rounded-full bg-border-strong" />
-        {title && <h2 className="text-headline mb-5 text-center text-text">{title}</h2>}
-        {children}
+        {/* Only the grabber drags; pointer capture here would otherwise swallow taps on the content. */}
+        <div
+          className="-mx-6 -mt-2 cursor-grab px-6 pt-2 pb-2 active:cursor-grabbing"
+          style={{ touchAction: "none" }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+        >
+          <div className="mx-auto mt-1 h-1.5 w-11 rounded-full bg-border-strong" />
+          {title && <h2 className="text-headline mt-4 text-center text-text">{title}</h2>}
+        </div>
+        <div className={title ? "mt-3" : "mt-2"}>{children}</div>
       </div>
     </div>,
     target,
