@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Muvment Driver PWA
 
-## Getting Started
+Phone-only Progressive Web App for Muvment professional drivers. It is a port of the
+Expo/React Native driver app (`../muvment-driver-apk`) to **Next.js 15 (App Router)**,
+with **TanStack Query** for data, **NextAuth (Auth.js v5)** for sessions, **Serwist** for
+the service worker and an Apple Human Interface Guidelines inspired UI in light and dark mode.
 
-First, run the development server:
+## Run
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local   # then fill AUTH_SECRET (openssl rand -base64 32)
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`npm run build && npm start` produces the installable PWA (manifest + `public/sw.js`).
+The service worker is only generated for production builds.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Open the URL on a phone (or use the browser's device toolbar). Desktop browsers get a
+hand-off screen with a QR code; set `NEXT_PUBLIC_ALLOW_DESKTOP=true` to bypass it while
+developing.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Mock backend
 
-## Learn More
+To click through every screen without real credentials, point the app at the built-in
+mock API (dev only; any email/password signs in):
 
-To learn more about Next.js, take a look at the following resources:
+```
+NEXT_PUBLIC_API_URL=http://localhost:3000/api/mock
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Architecture
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Area | Where |
+| --- | --- |
+| Routes (screens) | `src/app` — `(auth)` public, `(app)` protected, `(app)/(tabs)` with the tab bar |
+| Auth | `src/auth.ts` (Credentials provider → backend `/auth/login`, refresh in the JWT callback), `src/middleware.ts` (route guard) |
+| API client + hooks | `src/lib/api` — fetch client with bearer token, 401 → NextAuth refresh → retry |
+| Domain utils | `src/lib/utils` (trip formatting, checklist navigation, photo prep/upload, storage) |
+| Live location sharing | `src/lib/tracking` (foreground `watchPosition`, batched upload) |
+| UI kit | `src/components/ui` (Button, TextField, OTPInput, Sheet/AlertDialog, Toggle, ListRow…) |
+| Theme | `src/app/globals.css` tokens + `src/providers/ThemeProvider.tsx` (System / Light / Dark) |
+| PWA | `src/app/manifest.ts`, `src/app/sw.ts`, `public/icons` |
 
-## Deploy on Vercel
+### Web vs native differences
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Camera**: `<input type="file" capture>` opens the device camera; photos are downscaled
+  on a canvas before the presigned S3 upload.
+- **Location**: browsers only deliver GPS while the tab is open, so live sharing runs in
+  foreground mode and the navigation screen asks the driver to keep the screen on.
+- **Maps**: Leaflet + OpenStreetMap tiles (no key). Set `NEXT_PUBLIC_GOOGLE_ROUTES_API_KEY`
+  for traffic-aware routes; otherwise a straight-line estimate is drawn and "Open in
+  Google Maps" hands off turn-by-turn navigation.
+- **Push notifications**: the backend preference toggle is kept; live alerts arrive over
+  the STOMP/SockJS socket while the app is open.
+- **Secure storage**: tokens live in the encrypted NextAuth cookie; only UI preferences
+  and idempotency keys use `localStorage`.
