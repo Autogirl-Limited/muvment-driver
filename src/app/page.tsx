@@ -1,19 +1,18 @@
 "use client";
 
 import { useEffect } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 
-import { useScreenThemeColor } from "@/providers/ThemeProvider";
-
-const SPLASH_COLOR = "#1D2739";
-
-/** Splash: brand mark on navy, then hands off to Home or Login once the session is known. */
-export default function SplashPage() {
+/**
+ * Start URL. The middleware normally redirects this on the server; this
+ * client fallback only runs if that is bypassed (e.g. an offline cache hit).
+ * It renders a blank themed background so the OS launch screen is the only
+ * splash the driver sees.
+ */
+export default function StartPage() {
   const router = useRouter();
   const { status, data } = useSession();
-  useScreenThemeColor(SPLASH_COLOR);
 
   useEffect(() => {
     if (status === "loading") {
@@ -21,19 +20,8 @@ export default function SplashPage() {
     }
 
     const isAuthenticated = status === "authenticated" && Boolean(data?.accessToken) && !data?.error;
-    const timer = setTimeout(() => {
-      router.replace(isAuthenticated ? "/home" : "/login");
-    }, 900);
-
-    return () => clearTimeout(timer);
+    router.replace(isAuthenticated ? "/home" : "/login");
   }, [data?.accessToken, data?.error, router, status]);
 
-  return (
-    <main className="flex min-h-dvh flex-col items-center justify-center bg-[#1D2739]">
-      <div className="anim-scale-in flex flex-col items-center">
-        <Image src="/brand/splash-logo.png" alt="Muvment" width={120} height={120} priority className="h-28 w-28" />
-        <p className="mt-6 text-[13px] font-medium tracking-[0.18em] text-white/60 uppercase">Driver</p>
-      </div>
-    </main>
-  );
+  return <main className="min-h-dvh bg-bg" aria-busy="true" />;
 }

@@ -16,7 +16,7 @@ const PUBLIC_ROUTES = [
   "/bd-success",
 ];
 
-const ALWAYS_PUBLIC = ["/", "/privacy-policy", "/terms-of-use", "/~offline"];
+const ALWAYS_PUBLIC = ["/privacy-policy", "/terms-of-use", "/~offline"];
 
 const SESSION_COOKIES = [
   "__Secure-authjs.session-token",
@@ -30,12 +30,17 @@ const hasSessionCookie = (request: NextRequest) =>
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const isAuthenticated = hasSessionCookie(request);
+
+  // The app's start URL. Decide on the server so the OS launch screen hands
+  // straight to Home or Login with no in-app splash in between.
+  if (pathname === "/") {
+    return NextResponse.redirect(new URL(isAuthenticated ? "/home" : "/login", request.nextUrl.origin));
+  }
 
   if (ALWAYS_PUBLIC.includes(pathname)) {
     return NextResponse.next();
   }
-
-  const isAuthenticated = hasSessionCookie(request);
   const isAuthRoute = PUBLIC_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`),
   );

@@ -13,8 +13,11 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: "/",
     display: "standalone",
     orientation: "portrait",
-    background_color: "#ffffff",
-    theme_color: "#ffffff",
+    // Launch screen and the installed app's system bars before the page runs.
+    // Navy (the app's dark background) keeps white bar glyphs legible in both
+    // themes; once loaded, ThemeProvider sets the live theme-color per theme.
+    background_color: "#0B1220",
+    theme_color: "#0B1220",
     categories: ["business", "transportation", "navigation"],
     icons: [
       { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
