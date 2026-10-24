@@ -558,6 +558,73 @@ a {
   background: transparent;
   border: none;
 }
+/* Driver car marker (see components/trips/driverCarIcon.ts) */
+.car-marker {
+  background: transparent;
+  border: none;
+  /* Glide between GPS fixes instead of jumping; Leaflet positions via translate3d. */
+  transition: transform 900ms linear;
+  will-change: transform;
+}
+.leaflet-zoom-anim .car-marker {
+  transition: none;
+}
+.car-marker__halo,
+.car-marker__body {
+  position: absolute;
+  inset: 0;
+}
+.car-marker__halo::before,
+.car-marker__halo::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border-radius: 50%;
+  background: rgba(6, 115, 255, 0.28);
+}
+.car-marker__halo::after {
+  animation: pulse-ring 2.2s ease-out infinite;
+}
+.car-marker--night .car-marker__halo::before,
+.car-marker--night .car-marker__halo::after {
+  background: rgba(91, 160, 255, 0.3);
+}
+.car-marker__body {
+  transform-origin: 50% 50%;
+  transition: transform 700ms var(--ease-spring);
+}
+.car-marker__body svg {
+  display: block;
+  overflow: visible;
+}
+.car-marker__beams {
+  animation: beam-flicker 3.4s ease-in-out infinite;
+  transform-origin: 48px 30px;
+}
+@keyframes beam-flicker {
+  0%,
+  100% {
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .car-marker,
+  .car-marker__body {
+    transition: none;
+  }
+  .car-marker__halo::after,
+  .car-marker__beams {
+    animation: none;
+  }
+}
+
 /* Night map: invert the raster tiles, keep markers and overlays untouched */
 .map-night .leaflet-tile-pane {
   filter: invert(1) hue-rotate(180deg) brightness(0.82) contrast(0.92) saturate(0.7);

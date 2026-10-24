@@ -13,6 +13,7 @@ import { formatArrivalTime, formatRouteDistance, formatRouteDuration } from "@/l
 import { useTheme } from "@/providers/ThemeProvider";
 import { Spinner } from "@/components/ui/Spinner";
 import { WhatsAppIcon } from "./CallSheet";
+import { createDriverCarIcon } from "./driverCarIcon";
 
 export type TripNavigationMode = "pickup" | "dropoff";
 
@@ -98,19 +99,6 @@ const formatWaitingTime = (seconds: number) => {
 };
 
 /* ------------------------------------------------------------------ markers */
-const createCarIcon = (heading: number, night: boolean) =>
-  L.divIcon({
-    className: "leaflet-div-icon",
-    iconSize: [44, 44],
-    iconAnchor: [22, 22],
-    html: `<div style="position:relative;width:44px;height:44px;display:flex;align-items:center;justify-content:center;">
-      <span style="position:absolute;inset:0;border-radius:50%;background:${night ? "rgba(79,155,255,0.25)" : "rgba(6,115,255,0.18)"};"></span>
-      <span style="width:28px;height:28px;border-radius:50%;background:#0673FF;border:3px solid #fff;box-shadow:0 2px 8px rgba(16,25,40,0.35);display:flex;align-items:center;justify-content:center;transform:rotate(${heading}deg);transition:transform 600ms var(--ease-spring);">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M12 2 4 20l8-4 8 4z"/></svg>
-      </span>
-    </div>`,
-  });
-
 const createDestinationIcon = ({
   mode,
   title,
@@ -412,7 +400,17 @@ export const TripNavigationView = ({
       }),
     [chipTitle, destinationAddress, isDark, isWaiting, mode],
   );
-  const carIcon = useMemo(() => createCarIcon(heading, isDark), [heading, isDark]);
+  const carIcon = useMemo(() => createDriverCarIcon({ heading, night: isDark }), [isDark]); // eslint-disable-line react-hooks/exhaustive-deps
+  const carMarkerRef = useRef<L.Marker | null>(null);
+
+  // Rotate the existing DOM node rather than rebuilding the icon on every fix.
+  useEffect(() => {
+    const body = carMarkerRef.current?.getElement()?.querySelector<HTMLElement>(".car-marker__body");
+
+    if (body) {
+      body.style.transform = `rotate(${Math.round(heading)}deg)`;
+    }
+  }, [heading, carIcon]);
   const routeColor = isDark ? "#4F9BFF" : "#0673FF";
 
   return (
@@ -449,7 +447,7 @@ export const TripNavigationView = ({
         {isValidCoordinate(destinationCoordinate) && (
           <Marker position={toLatLng(destinationCoordinate)} icon={destinationIcon} zIndexOffset={200} />
         )}
-        {driverCoordinate && <Marker position={toLatLng(driverCoordinate)} icon={carIcon} zIndexOffset={300} />}
+        {driverCoordinate && <Marker ref={carMarkerRef} position={toLatLng(driverCoordinate)} icon={carIcon} zIndexOffset={300} />}
       </MapContainer>
 
       {/* Top chrome */}
