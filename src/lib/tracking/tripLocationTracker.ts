@@ -10,7 +10,8 @@ import { storage } from "../utils/storage";
  *
  * Web limitation: browsers only deliver geolocation while the tab is open and in the
  * foreground (there is no background location API for PWAs). The tracker therefore runs in
- * "foreground" mode only and tells the driver to keep the app open.
+ * "foreground" mode only, tells the driver to keep the app open, and holds a screen wake lock
+ * while sharing so the phone doesn't sleep mid-trip (ops' trip monitor flags lost locations).
  */
 
 const ACTIVE_TRIP_KEY = "tracking.activeTripId";
@@ -203,6 +204,28 @@ const clearFlushTimer = () => {
   }
 };
 
+let wakeLock: WakeLockSentinel | null = null;
+
+/** Keeps the screen on while sharing. Browsers drop the lock when the tab is hidden, so it is re-taken on return. */
+const holdScreenAwake = async () => {
+  if (wakeLock || typeof navigator === "undefined" || !("wakeLock" in navigator) || document.visibilityState !== "visible") {
+    return;
+  }
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+    wakeLock.addEventListener("release", () => {
+      wakeLock = null;
+    });
+  } catch {
+    // Battery saver or an unsupported browser: sharing still works while the screen is on.
+  }
+};
+
+const releaseScreen = () => {
+  void wakeLock?.release().catch(() => undefined);
+  wakeLock = null;
+};
+
 const stopWatch = () => {
   if (watchId !== null && typeof navigator !== "undefined") {
     navigator.geolocation.clearWatch(watchId);
@@ -255,6 +278,7 @@ export const startTripTracking = async (tripId: string): Promise<void> => {
     { enableHighAccuracy: true, maximumAge: 2_000, timeout: 20_000 },
   );
   setState({ mode: "foreground" });
+  void holdScreenAwake();
 };
 
 /** Stops sharing, sends whatever is still queued, and forgets the trip. */
@@ -262,6 +286,7 @@ export const stopTripTracking = async (): Promise<void> => {
   const hadTrip = state.tripId;
   stopWatch();
   clearFlushTimer();
+  releaseScreen();
   if (hadTrip && buffer.length > 0 && !inFlight) {
     await apiFetchClient
       .post(uploadPath(hadTrip), { samples: buffer.slice(-MAX_BUFFERED_FIXES) })
@@ -291,6 +316,7 @@ if (typeof document !== "undefined") {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && state.tripId) {
       void flushTripLocations(true);
+      void holdScreenAwake();
     }
   });
   window.addEventListener("online", () => {
