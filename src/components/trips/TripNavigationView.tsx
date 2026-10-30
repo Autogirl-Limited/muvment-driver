@@ -365,9 +365,6 @@ export const TripNavigationView = ({
     if (tracker.problem === "unsupported") {
       return { tone: "#D92D20", label: "This browser can't share your location." };
     }
-    if (tracker.problem === "unavailable") {
-      return { tone: "#F79009", label: "Location is temporarily unavailable. Retrying…" };
-    }
     if (tracker.problem === "offline") {
       return {
         tone: "#F79009",
