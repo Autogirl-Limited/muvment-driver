@@ -349,6 +349,49 @@ export const getDriverTripSectionTitle = (trip: DriverTrip) => {
   return dateFormatter.format(startDate);
 };
 
+const getSortableTripDuration = (duration?: number | null) =>
+  duration !== undefined &&
+  duration !== null &&
+  Number.isFinite(duration) &&
+  duration >= 0
+    ? duration
+    : Number.POSITIVE_INFINITY;
+
+/**
+ * Orders assignments as a driver itinerary: chronologically first, then by
+ * shortest assignment when start times match. The id keeps the result stable
+ * when both scheduling values are equal.
+ */
+export const compareDriverTripsBySchedule = (
+  firstTrip: DriverTrip,
+  secondTrip: DriverTrip,
+) => {
+  const firstStartTime = parseDate(firstTrip.startDateTime)?.getTime();
+  const secondStartTime = parseDate(secondTrip.startDateTime)?.getTime();
+
+  if (firstStartTime !== undefined && secondStartTime !== undefined) {
+    const startTimeDifference = firstStartTime - secondStartTime;
+
+    if (startTimeDifference !== 0) {
+      return startTimeDifference;
+    }
+  } else if (firstStartTime !== undefined) {
+    return -1;
+  } else if (secondStartTime !== undefined) {
+    return 1;
+  }
+
+  const durationDifference =
+    getSortableTripDuration(firstTrip.tripDuration) -
+    getSortableTripDuration(secondTrip.tripDuration);
+
+  if (Number.isFinite(durationDifference) && durationDifference !== 0) {
+    return durationDifference;
+  }
+
+  return firstTrip.id.localeCompare(secondTrip.id);
+};
+
 export const toDriverTripCardModel = (
   trip: DriverTrip,
   fallbackStatus?: DriverTripStatus,
@@ -413,7 +456,7 @@ export const groupDriverTripsForCards = (
 ): DriverTripSection[] => {
   const groupedTrips = new Map<string, DriverTripCardModel[]>();
 
-  trips.forEach((trip) => {
+  [...trips].sort(compareDriverTripsBySchedule).forEach((trip) => {
     const sectionTitle = getDriverTripSectionTitle(trip);
     const sectionTrips = groupedTrips.get(sectionTitle) ?? [];
 
