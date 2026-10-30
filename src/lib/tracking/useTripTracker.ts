@@ -18,8 +18,6 @@ export const SHARING_STATUSES: readonly DriverTripStatus[] = [
   "EXTRA_TIME",
 ];
 
-const FINISHED_STATUSES: readonly DriverTripStatus[] = ["COMPLETE", "CANCELLED"];
-
 export const isSharingStatus = (status?: DriverTripStatus | null) =>
   !!status && SHARING_STATUSES.includes(status);
 
@@ -34,7 +32,7 @@ export const useEnsureTripTracking = (tripId?: string, status?: DriverTripStatus
     }
     if (isSharingStatus(status)) {
       void startTripTracking(tripId);
-    } else if (FINISHED_STATUSES.includes(status) && getTrackerState().tripId === tripId) {
+    } else if (getTrackerState().tripId === tripId) {
       void stopTripTracking();
     }
   }, [tripId, status]);
@@ -44,7 +42,7 @@ export const useEnsureTripTracking = (tripId?: string, status?: DriverTripStatus
 export const syncTrackingWithStatus = (tripId: string, status: DriverTripStatus) => {
   if (isSharingStatus(status)) {
     void startTripTracking(tripId);
-  } else if (FINISHED_STATUSES.includes(status) && getTrackerState().tripId === tripId) {
+  } else if (getTrackerState().tripId === tripId) {
     void stopTripTracking();
   }
 };
