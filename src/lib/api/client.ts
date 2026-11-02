@@ -64,7 +64,8 @@ export const setUnauthorizedHandler = (handler?: UnauthorizedHandler) => {
   unauthorizedHandler = handler;
 };
 
-const refreshAccessToken = async () => {
+/** Refreshes the access token once (shared by concurrent callers); undefined when it can't. */
+export const refreshAccessToken = async () => {
   if (!refreshHandler) {
     return undefined;
   }

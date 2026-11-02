@@ -316,6 +316,10 @@ const handle = async (request: NextRequest, path: string) => {
       uploadUrl: `${origin}/api/mock/upload-sink`,
     });
   }
+  if (path === "media/upload") {
+    // The server route: same result as a presigned upload, with no uploadUrl.
+    return ok({ fileUrl: `${request.nextUrl.origin}/brand/package.png`, key: `mock/${Date.now()}.jpg` }, "File uploaded");
+  }
 
   const driverPayments = await handleDriverPaymentsMock(request, path);
   if (driverPayments) {
