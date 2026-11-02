@@ -1,4 +1,4 @@
-import { ApiRequestError } from "../api/client";
+import { ApiRequestError, getAccessToken, getApiBaseUrl, refreshAccessToken } from "../api/client";
 import { createPresignedMediaUrl, deleteMedia, MEDIA_PRESIGNED_URL_PATH } from "../api/media";
 import type { CreatePresignedMediaUrlPayload } from "../api/types";
 import { isAppKnownOffline } from "./networkStatus";
@@ -174,7 +174,94 @@ const isTransientUploadError = (error: unknown) => {
   return error instanceof TypeError;
 };
 
-const uploadPreparedChecklistPhotoOnce = async ({
+const MEDIA_UPLOAD_PATH = "/media/upload";
+const SERVER_UPLOAD_TIMEOUT_MS = 60000;
+
+/**
+ * Sends the photo to our API, which stores it. This is the main route: drivers' phones reach the
+ * API reliably, while a direct upload to the storage host can be refused (bucket CORS) or stall on
+ * some mobile networks. Retries once with a fresh token on 401.
+ */
+const uploadThroughServer = async ({
+  blob,
+  fileName,
+  tripId,
+}: {
+  blob: Blob;
+  fileName: string;
+  tripId: string;
+}): Promise<ChecklistPhotoUploadResult> => {
+  const send = (token?: string) =>
+    new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const form = new FormData();
+      form.append("file", blob, fileName);
+      form.append("category", CHECKLIST_MEDIA_CATEGORY);
+      form.append("entityId", tripId);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${getApiBaseUrl()}${MEDIA_UPLOAD_PATH}`);
+      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.onload = () => resolve({ status: xhr.status, body: xhr.responseText });
+      xhr.onerror = () => reject(new UploadRequestError(CHECKLIST_UPLOAD_FAILED_MESSAGE));
+      xhr.ontimeout = () => reject(new UploadRequestError("Photo upload timed out.", 408));
+      xhr.timeout = SERVER_UPLOAD_TIMEOUT_MS;
+      xhr.send(form);
+    });
+
+  let response = await send(getAccessToken());
+  if (response.status === 401) {
+    const token = await refreshAccessToken();
+    if (token) response = await send(token);
+  }
+
+  if (response.status < 200 || response.status >= 300) {
+    throw new UploadRequestError(`Photo upload failed with status ${response.status}.`, response.status);
+  }
+
+  let data: { fileUrl?: string; key?: string } | undefined;
+  try {
+    data = (JSON.parse(response.body) as { data?: { fileUrl?: string; key?: string } }).data;
+  } catch {
+    data = undefined;
+  }
+  if (!data?.fileUrl || !data.key?.trim()) {
+    throw new UploadRequestError("Media upload response was missing upload details.");
+  }
+
+  return { fileUrl: data.fileUrl, publicCloudID: data.key.trim() };
+};
+
+/**
+ * A refusal (bad file, no access) that the direct route wouldn't fix either. 404/405 aren't: they
+ * mean the API doesn't have the upload route yet (app updated before the backend).
+ */
+const isFinalRefusal = (error: unknown) =>
+  error instanceof UploadRequestError &&
+  typeof error.status === "number" &&
+  error.status >= 400 &&
+  error.status < 500 &&
+  ![404, 405, 408, 429].includes(error.status);
+
+const uploadPreparedChecklistPhotoOnce = async (args: {
+  attempt: number;
+  blob: Blob;
+  label: string;
+  tripId: string;
+}): Promise<ChecklistPhotoUploadResult> => {
+  try {
+    return await runMediaStage(
+      "server-upload",
+      () => uploadThroughServer({ blob: args.blob, fileName: buildFileName(), tripId: args.tripId }),
+      { attempt: args.attempt, label: args.label, bytes: args.blob.size },
+    );
+  } catch (serverError) {
+    if (isFinalRefusal(serverError)) throw serverError;
+    // Otherwise try the direct route to storage before giving up.
+    return uploadDirectToStorage(args);
+  }
+};
+
+const uploadDirectToStorage = async ({
   attempt,
   blob,
   label,
