@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import L from "leaflet";
 import { MapContainer, Marker, Polyline, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import { ChevronLeft, Flag, MapPin, Maximize2, Navigation, Phone } from "lucide-react";
@@ -28,6 +28,8 @@ type TripNavigationViewProps = {
   onWhatsapp?: () => void;
   primaryActionLoading?: boolean;
   statusLabel: string;
+  /** Ride counter and pause controls, shown in the bottom sheet during the ride. */
+  timerSlot?: ReactNode;
 };
 
 type PermissionState = "checking" | "granted" | "denied";
@@ -208,6 +210,7 @@ export const TripNavigationView = ({
   onWhatsapp,
   primaryActionLoading,
   statusLabel,
+  timerSlot,
 }: TripNavigationViewProps) => {
   const { isDark } = useTheme();
   const tracker = useTripTracker();
@@ -546,7 +549,11 @@ export const TripNavigationView = ({
               )}
             </div>
           </div>
-          <span className="mt-1 rounded-full bg-success px-2.5 py-1 text-[11px] font-medium text-white uppercase">
+          <span
+            className={`mt-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-white uppercase ${
+              /paused|extra/i.test(statusLabel) ? "bg-warning" : "bg-success"
+            }`}
+          >
             {statusLabel}
           </span>
         </div>
@@ -570,6 +577,8 @@ export const TripNavigationView = ({
             </p>
           </div>
         )}
+
+        {timerSlot && <div className="mt-4">{timerSlot}</div>}
 
         <div className="mt-5 flex items-center gap-4">
           <button

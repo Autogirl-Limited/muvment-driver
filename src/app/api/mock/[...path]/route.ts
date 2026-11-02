@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { handleDriverPaymentsMock, registerMockRide, setMockRideStatus, withRide } from "./driverPaymentsMock";
+
 /**
  * Dev-only mock of the Muvment backend so the UI can be exercised without
  * real credentials. Enable it by pointing NEXT_PUBLIC_API_URL at
@@ -72,7 +74,70 @@ const TRIPS = [
     driverTripStatus: "COMPLETE",
     standardTripStatus: "COMPLETED",
   },
+  {
+    id: "trip-4",
+    tripCustomId: "TRP-2026-102849",
+    customerName: "Mrs Ngozi Eze",
+    customerPhoneNumber: "+234 805 222 3344",
+    pickupLocation: "Eko Hotel, Victoria Island",
+    city: "Lagos",
+    vehicleName: "Lexus RX 350",
+    vehicleIdentifier: "LAG-909-EKY",
+    // Starts two minutes after the dev server boots, to show the auto-start countdown.
+    startDateTime: hoursFromNow(2 / 60),
+    endDateTime: hoursFromNow(12 + 2 / 60),
+    tripDuration: 12,
+    bookingTypeName: "12 Hours",
+    driverOwnerType: "COMPANY",
+    driverTripStatus: "AWAITING_PICKUP",
+    standardTripStatus: "UPCOMING",
+  },
+  {
+    id: "trip-5",
+    tripCustomId: "TRP-2026-102850",
+    customerName: "Engr. Musa Danjuma",
+    customerPhoneNumber: "+234 806 777 8899",
+    pickupLocation: "Ikoyi Club, Ikoyi",
+    city: "Lagos",
+    vehicleName: "Toyota Prado",
+    vehicleIdentifier: "LAG-404-IKY",
+    startDateTime: hoursFromNow(-12.5),
+    endDateTime: hoursFromNow(-0.4),
+    tripDuration: 12,
+    bookingTypeName: "12 Hours",
+    driverOwnerType: "COMPANY",
+    driverTripStatus: "EXTRA_TIME",
+    standardTripStatus: "ONGOING",
+  },
 ];
+
+const INVOICES: Record<string, string> = {
+  "trip-1": "INVAG-1110",
+  "trip-2": "INVAG-1104",
+  "trip-3": "INVAG-1093",
+  "trip-4": "INVAG-1112",
+  "trip-5": "INVAG-1099",
+};
+
+// Ride timer state for each mock trip (see driverPaymentsMock.ts).
+TRIPS.forEach((trip) => {
+  const bookedStartMs = Date.parse(trip.startDateTime);
+  const bookedEndMs = Date.parse(trip.endDateTime);
+  const started = ["ONGOING", "EXTRA_TIME", "COMPLETE"].includes(trip.driverTripStatus);
+  registerMockRide(trip.id, {
+    status: trip.driverTripStatus,
+    bookedStartMs,
+    bookedEndMs,
+    actualStartMs: started ? bookedStartMs - 5 * 60_000 : null,
+    startMethod: started ? "DRIVER" : null,
+    actualEndMs: trip.driverTripStatus === "COMPLETE" ? bookedEndMs + 40 * 60_000 : null,
+    endMethod: trip.driverTripStatus === "COMPLETE" ? "DRIVER" : null,
+    closeoutStatus: trip.driverTripStatus === "COMPLETE" ? "CLOSED" : "OPEN",
+  });
+});
+
+const listTrip = (trip: (typeof TRIPS)[number]) =>
+  withRide({ ...trip, bookingId: `bk-${INVOICES[trip.id]?.slice(-4)}`, invoiceNumber: INVOICES[trip.id] ?? null });
 
 const STATISTICS = { assignedTrips: 3, cancelledTrips: 0, completedTrips: 1, onGoingTrips: 1, upcomingTrips: 1 };
 
@@ -124,7 +189,7 @@ const PRE_SUMMARY = {
 };
 
 const tripDetails = (id: string) => {
-  const trip = TRIPS.find((item) => item.id === id) ?? TRIPS[0];
+  const trip = listTrip(TRIPS.find((item) => item.id === id) ?? TRIPS[0]);
 
   return {
     ...trip,
@@ -133,7 +198,7 @@ const tripDetails = (id: string) => {
   };
 };
 
-const handle = (request: NextRequest, path: string) => {
+const handle = async (request: NextRequest, path: string) => {
   const method = request.method;
 
   if (path === "auth/login" && method === "POST") {
@@ -185,7 +250,7 @@ const handle = (request: NextRequest, path: string) => {
   if (path === "driver-app/trips") {
     const search = request.nextUrl.searchParams.get("search")?.toLowerCase();
     const status = request.nextUrl.searchParams.get("tripStatus");
-    const content = TRIPS.filter(
+    const content = TRIPS.map(listTrip).filter(
       (trip) =>
         (!search || `${trip.tripCustomId} ${trip.customerName}`.toLowerCase().includes(search)) &&
         (!status || trip.standardTripStatus === status),
@@ -222,6 +287,7 @@ const handle = (request: NextRequest, path: string) => {
   }
   if (/^driver-app\/checklists\/[^/]+\/transition$/.test(path)) {
     const driverTripStatus = request.nextUrl.searchParams.get("driverTripStatus");
+    if (driverTripStatus) setMockRideStatus(path.split("/")[2], driverTripStatus);
     return ok({ driverId: "mock-driver", driverTripStatus, prevTripStatus: "NOT_STARTED", tripId: path.split("/")[2] });
   }
   if (path === "driver-app/settings/notification") {
@@ -241,7 +307,19 @@ const handle = (request: NextRequest, path: string) => {
     return ok({}, "Updated");
   }
   if (path === "media/presigned-url") {
-    return ok({ expiresAt: hoursFromNow(1), fileUrl: "https://example.com/mock.jpg", key: "mock/mock.jpg", uploadUrl: "https://example.com/upload" });
+    // Uploads land in a local sink; the stored "file" is a bundled image.
+    const origin = request.nextUrl.origin;
+    return ok({
+      expiresAt: hoursFromNow(1),
+      fileUrl: `${origin}/brand/package.png`,
+      key: `mock/${Date.now()}.jpg`,
+      uploadUrl: `${origin}/api/mock/upload-sink`,
+    });
+  }
+
+  const driverPayments = await handleDriverPaymentsMock(request, path);
+  if (driverPayments) {
+    return driverPayments;
   }
 
   return NextResponse.json({ status: "NOT_FOUND", message: `No mock for ${method} /${path}`, timestamp: now() }, { status: 404 });

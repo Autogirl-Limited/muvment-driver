@@ -1,32 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { CalendarDays, Car, Clock, Phone } from "lucide-react";
+import { CalendarDays, Car, Clock, Phone, Wallet } from "lucide-react";
 
 import { CallSheet } from "@/components/trips/CallSheet";
 import { LocationItem } from "@/components/trips/LocationItem";
+import { AutoStartCountdown, RideTimerPanel, useAutoStartCountdown } from "@/components/trips/RideTimerPanel";
 import { TimelineTracker } from "@/components/trips/TimelineTracker";
 import { BackButton } from "@/components/ui/BackButton";
 import { TripBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { AlertDialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Divider, NavBar, Screen, SectionHeader } from "@/components/ui/Screen";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { useTransitionDriverTripStatus } from "@/lib/api/hooks/usePreRideChecklist";
+import { useRideActions, useTripWithQueuedRideActions } from "@/lib/api/hooks/useRideTimer";
 import { useDriverTrip } from "@/lib/api/hooks/useTrips";
-import type { DriverTripDetails, DriverTripLocation, DriverTripStatus } from "@/lib/api/types";
+import type { DriverTripLocation, DriverTripStatus } from "@/lib/api/types";
+import { computeRideClock, isPreRideStatus, isRidingStatus, useServerNow } from "@/lib/rideTimer/rideClock";
 import { getTripBannerMessage, getTripTimeline } from "@/lib/data/tripTimeline";
 import { useEnsureTripTracking } from "@/lib/tracking/useTripTracker";
 import { getMapsSearchUrl } from "@/lib/utils/deviceActions";
 import {
   getDriverTripBookingBadgeLabel,
-  getDriverTripBookingTimerType,
   getDriverTripStatusLabel,
   getResolvedDriverTripDetailsStatus,
-  type DriverTripBookingTimerType,
 } from "@/lib/utils/driverTrips";
+import { parseLagosMs } from "@/lib/utils/lagosTime";
 import { useToast } from "@/providers/ToastProvider";
 
 const compact = (value?: string | null) => value?.trim() || undefined;
@@ -55,74 +56,6 @@ const formatScheduleLabel = (startValue?: string | null, endValue?: string | nul
 const formatDurationLabel = (duration?: number | null) =>
   duration === undefined || duration === null ? undefined : `${duration} hr${duration === 1 ? "" : "s"}`;
 
-const getRideTimerConfig = (rideType: DriverTripBookingTimerType) => {
-  switch (rideType) {
-    case "airport":
-      return { label: "Airport Transfer – 4 Hours", totalSeconds: 4 * 60 * 60 };
-    case "standard":
-      return { label: "Standard – 12 Hours", totalSeconds: 12 * 60 * 60 };
-    case "full-day":
-      return { label: "Full Day Rental – 24 Hours", totalSeconds: 24 * 60 * 60 };
-  }
-};
-
-const formatTime = (totalSeconds: number) => {
-  const safeSeconds = Math.max(0, totalSeconds);
-  const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.floor((safeSeconds % 3600) / 60);
-  const seconds = safeSeconds % 60;
-  return [hours, minutes, seconds].map((value) => String(value).padStart(2, "0")).join(":");
-};
-
-const getRideTimer = (details: DriverTripDetails | undefined, nowMs: number) => {
-  const timerType = getDriverTripBookingTimerType(details?.bookingTypeName);
-  const fallback = getRideTimerConfig(timerType);
-  const startDate = parseApiDate(details?.startDateTime);
-  const endDate = parseApiDate(details?.endDateTime);
-  const spanSeconds =
-    startDate && endDate ? Math.floor((endDate.getTime() - startDate.getTime()) / 1000) : undefined;
-  const durationSeconds =
-    details?.tripDuration && Number.isFinite(details.tripDuration) && details.tripDuration > 0
-      ? Math.round(details.tripDuration * 3600)
-      : undefined;
-  const totalSeconds = (spanSeconds && spanSeconds > 0 ? spanSeconds : undefined) ?? durationSeconds ?? fallback.totalSeconds;
-  const remainingSeconds = endDate
-    ? Math.min(totalSeconds, Math.max(0, Math.floor((endDate.getTime() - nowMs) / 1000)))
-    : totalSeconds;
-
-  return { label: compact(details?.bookingTypeName) ?? fallback.label, remainingSeconds, totalSeconds };
-};
-
-const TimerRing = ({ remainingSeconds, totalSeconds }: { remainingSeconds: number; totalSeconds: number }) => {
-  const size = 128;
-  const strokeWidth = 11;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const progress = totalSeconds > 0 ? remainingSeconds / totalSeconds : 0;
-  const offset = circumference * (1 - Math.max(0, Math.min(progress, 1)));
-
-  return (
-    <div className="relative flex items-center justify-center">
-      <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={radius} stroke="var(--fill-strong)" strokeWidth={strokeWidth} fill="none" />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke="var(--accent)"
-          strokeWidth={strokeWidth}
-          fill="none"
-          strokeLinecap="round"
-          strokeDasharray={`${circumference} ${circumference}`}
-          strokeDashoffset={offset}
-          style={{ transition: "stroke-dashoffset 1s linear" }}
-        />
-      </svg>
-      <span className="absolute text-[20px] font-bold tabular-nums text-text">{formatTime(remainingSeconds)}</span>
-    </div>
-  );
-};
-
 const STATUS_STYLE: Record<string, { banner: string; badge: string }> = {
   "CHECKED IN": { banner: "bg-[#0A8F2A]", badge: "bg-success" },
   "AWAITING PICKUP": { banner: "bg-[#F97316]", badge: "bg-[#F97316]" },
@@ -136,35 +69,59 @@ const DEFAULT_STATUS_STYLE = { banner: "bg-[#DC2626]", badge: "bg-[#EAB308]" };
 
 const getLocationAddress = (location?: DriverTripLocation | null) => compact(location?.location);
 
+/** While the server may auto-start a ride (booked start passed, not started), poll for it. */
+const AUTO_START_POLL_MS = 10_000;
+const AUTO_START_POLL_WINDOW_MS = 3 * 60 * 60_000;
+
 export default function TripDetailPage() {
   const router = useRouter();
   const toast = useToast();
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const tripId = decodeURIComponent(params.id ?? "");
-  const driverTripQuery = useDriverTrip(tripId || undefined);
+  const [pollForAutoStart, setPollForAutoStart] = useState(false);
+  const driverTripQuery = useDriverTrip(tripId || undefined, {
+    refetchInterval: pollForAutoStart ? AUTO_START_POLL_MS : false,
+  });
   const transitionDriverTripStatus = useTransitionDriverTripStatus();
-  const details = driverTripQuery.data?.data;
+  const rideActions = useRideActions(tripId);
+  // Ride actions saved offline are shown as if already applied.
+  const { details, pendingCount } = useTripWithQueuedRideActions(tripId, driverTripQuery.data?.data);
   const backendStatus = getResolvedDriverTripDetailsStatus(details);
   useEnsureTripTracking(tripId, backendStatus);
 
   const stageParam = searchParams.get("stage");
   const status: DriverTripStatus = backendStatus ?? "NOT_STARTED";
+  const rideTimer = details?.rideTimer;
+  const autoStarted = rideTimer?.startMethod === "AUTO" && isRidingStatus(status);
   const statusLabel = getDriverTripStatusLabel(status);
   const statusStyle = STATUS_STYLE[statusLabel] ?? DEFAULT_STATUS_STYLE;
-  const isRideTimerVisible = status === "ONGOING" || status === "EXTRA_TIME";
-  const [timerNowMs, setTimerNowMs] = useState(() => Date.now());
   const [isCallSheetOpen, setCallSheetOpen] = useState(false);
-  const [isEndRideConfirmVisible, setEndRideConfirmVisible] = useState(false);
 
-  useEffect(() => {
-    if (!isRideTimerVisible) return;
-    setTimerNowMs(Date.now());
-    const interval = setInterval(() => setTimerNowMs(Date.now()), 1000);
-    return () => clearInterval(interval);
-  }, [isRideTimerVisible]);
+  const nowMs = useServerNow({
+    active: status !== "COMPLETE" && status !== "CANCELLED",
+    receivedAt: driverTripQuery.dataUpdatedAt,
+    serverNow: rideTimer?.serverNow,
+  });
+  const clock = computeRideClock(rideTimer, nowMs);
+  const bookedStartMs = parseLagosMs(rideTimer?.bookedStartAt);
+  const shouldPoll =
+    isPreRideStatus(status) &&
+    !rideTimer?.actualStartAt &&
+    bookedStartMs !== undefined &&
+    nowMs >= bookedStartMs &&
+    nowMs - bookedStartMs < AUTO_START_POLL_WINDOW_MS;
 
-  const rideTimer = getRideTimer(details, timerNowMs);
+  if (shouldPoll !== pollForAutoStart) {
+    setPollForAutoStart(shouldPoll);
+  }
+
+  const refetchTrip = driverTripQuery.refetch;
+  const handleReachedStart = useCallback(() => {
+    // The server sweep starts the ride; give it a moment, then look.
+    window.setTimeout(() => void refetchTrip(), 2_000);
+  }, [refetchTrip]);
+  const countdown = useAutoStartCountdown({ clock, status, onReachedStart: handleReachedStart });
   const pickupAddress = getLocationAddress(details?.pickupLocation) ?? "Pickup location unavailable";
   const dropOffAddress = getLocationAddress(details?.dropOffLocation) ?? "Drop-off location unavailable";
   const bookingType = compact(details?.driverOwnerType);
@@ -211,6 +168,20 @@ export default function TripDetailPage() {
   const openNavigation = (mode: "pickup" | "dropoff") =>
     router.push(`/trip-navigation/${encodeURIComponent(tripId)}?mode=${mode}`);
 
+  const startRide = async () => {
+    const result = await rideActions.run("start");
+    if (result.ok) {
+      router.replace(`/trip-navigation/${encodeURIComponent(tripId)}?mode=dropoff`);
+    }
+  };
+
+  const endRide = async () => {
+    const result = await rideActions.run("end");
+    if (result.ok && !result.queued) {
+      toast.success("Ride ended", "Your ride times are shown below.");
+    }
+  };
+
   const actionConfig = (() => {
     const pending = transitionDriverTripStatus.isPending;
 
@@ -228,6 +199,12 @@ export default function TripDetailPage() {
       case "EXTRA_TIME":
         return { title: "Return to Drop-off Navigation", loading: false, onClick: () => openNavigation("dropoff") };
       case "COMPLETE":
+        return {
+          title: "Request payment",
+          loading: false,
+          icon: <Wallet size={18} />,
+          onClick: () => router.push(`/payments/new?tripId=${encodeURIComponent(tripId)}`),
+        };
       case "CANCELLED":
         return null;
       default:
@@ -280,17 +257,22 @@ export default function TripDetailPage() {
       )}
 
       <div className="anim-rise-in px-5 pt-5 pb-10" style={{ animationDelay: `${stageParam ? 0 : 40}ms` }}>
-        {isRideTimerVisible && (
-          <div className="mb-6 flex flex-col items-center">
-            <TimerRing remainingSeconds={rideTimer.remainingSeconds} totalSeconds={rideTimer.totalSeconds} />
-            <p className="text-footnote mt-4 text-text-3">Time remaining</p>
-            <p className="text-headline mt-1 text-text">{rideTimer.label}</p>
-          </div>
-        )}
+        <RideTimerPanel
+          status={status}
+          timer={rideTimer}
+          nowMs={nowMs}
+          pendingCount={pendingCount}
+          pendingAction={rideActions.pendingAction}
+          showStart={status !== "NOT_STARTED"}
+          onStart={() => void startRide()}
+          onPause={(reason, note) => rideActions.run("pause", { reason, note })}
+          onResume={() => void rideActions.run("resume")}
+          onEnd={() => void endRide()}
+        />
 
         <SectionHeader>Trip Status</SectionHeader>
         <span className={`${statusStyle.badge} inline-flex rounded-full px-4 py-1.5 text-[11px] font-semibold tracking-[0.06em] text-white uppercase`}>
-          {statusLabel}
+          {autoStarted ? `${statusLabel} (auto-started)` : statusLabel}
         </span>
 
         <Divider className="my-4" />
@@ -394,7 +376,11 @@ export default function TripDetailPage() {
 
         {actionConfig && (
           <div className="mt-8">
-            <Button loading={actionConfig.loading} onClick={actionConfig.onClick}>
+            <Button
+              loading={actionConfig.loading}
+              onClick={actionConfig.onClick}
+              icon={"icon" in actionConfig ? actionConfig.icon : undefined}
+            >
               {actionConfig.title}
             </Button>
           </div>
@@ -402,19 +388,8 @@ export default function TripDetailPage() {
       </div>
 
       <CallSheet open={isCallSheetOpen} onClose={() => setCallSheetOpen(false)} phoneNumber={details.customerPhoneNumber} />
+      {countdown !== null && <AutoStartCountdown seconds={countdown} />}
 
-      <AlertDialog
-        open={isEndRideConfirmVisible}
-        onClose={() => setEndRideConfirmVisible(false)}
-        onConfirm={() => {
-          setEndRideConfirmVisible(false);
-          void transition({ nextStatus: "COMPLETE" });
-        }}
-        title="End this ride?"
-        message="This will mark the ride complete and move it out of your active trip cycle."
-        confirmText="End Ride"
-        confirmVariant="danger"
-      />
     </Screen>
   );
 }

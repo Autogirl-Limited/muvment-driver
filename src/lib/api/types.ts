@@ -1,3 +1,5 @@
+import type { RideTimer } from "./driverPaymentTypes";
+
 export type ApiStatus = "SUCCESSFUL";
 
 export type DriverApplicationStatus = "PENDING";
@@ -233,6 +235,9 @@ export interface DriverTrip {
   driverOwnerType?: string | null;
   createdAt?: string | null;
   tripCustomId?: string | null;
+  bookingId?: string | null;
+  invoiceNumber?: string | null;
+  rideTimer?: RideTimer | null;
   driverTripStatus?: DriverTripStatus | null;
   standardTripStatus?: StandardTripStatus | null;
   tripStatus?: DriverTripStatus | null;
@@ -274,6 +279,9 @@ export interface DriverTripDetails {
   bookingTypeName?: string | null;
   driverOwnerType?: string | null;
   tripCustomId?: string | null;
+  bookingId?: string | null;
+  invoiceNumber?: string | null;
+  rideTimer?: RideTimer | null;
 }
 
 export interface DriverTripsQueryParams {
@@ -553,3 +561,6 @@ export interface VehicleFeature {
 }
 
 export type VehicleFeaturesResponse = ApiResponse<VehicleFeature[]>;
+
+// Ride timer, schedule, push devices, bank account and payment request types.
+export type * from "./driverPaymentTypes";
