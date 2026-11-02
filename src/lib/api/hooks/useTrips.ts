@@ -91,7 +91,10 @@ export const useDriverTrips = (params: DriverTripsQueryParams = {}) =>
     staleTime: 30_000,
   });
 
-export const useDriverTrip = (id?: string) =>
+export const useDriverTrip = (
+  id?: string,
+  { refetchInterval }: { refetchInterval?: number | false } = {},
+) =>
   useQuery<DriverTripDetailsResponse, Error>({
     queryKey: ["driver-trip", id],
     queryFn: async () => {
@@ -106,6 +109,7 @@ export const useDriverTrip = (id?: string) =>
       return response.data;
     },
     enabled: Boolean(id),
+    refetchInterval,
     staleTime: 30_000,
   });
 

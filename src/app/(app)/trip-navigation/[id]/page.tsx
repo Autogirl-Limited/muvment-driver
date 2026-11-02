@@ -3,14 +3,18 @@
 import { useCallback, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { Pause, Play } from "lucide-react";
 
+import { END_RIDE_MESSAGE, END_RIDE_TITLE, PauseReasonSheet, RideCounter } from "@/components/trips/RideTimerPanel";
 import { AlertDialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Screen } from "@/components/ui/Screen";
+import { Spinner } from "@/components/ui/Spinner";
 import { getApiErrorMessage } from "@/lib/api/errors";
-import { useTransitionDriverTripStatus } from "@/lib/api/hooks/usePreRideChecklist";
+import { useRideActions, useTripWithQueuedRideActions } from "@/lib/api/hooks/useRideTimer";
 import { useDriverTrip } from "@/lib/api/hooks/useTrips";
 import type { DriverTripDetails, DriverTripStatus } from "@/lib/api/types";
+import { computeRideClock, isRidingStatus, useServerNow } from "@/lib/rideTimer/rideClock";
 import { useEnsureTripTracking } from "@/lib/tracking/useTripTracker";
 import { getPhoneUrl, getWhatsAppUrl, openExternalUrl } from "@/lib/utils/deviceActions";
 import { getDriverTripStatusLabel, getResolvedDriverTripDetailsStatus } from "@/lib/utils/driverTrips";
@@ -36,9 +40,15 @@ const getTripStatusLabel = (mode: TripNavigationMode, tripDetails?: DriverTripDe
   const resolvedStatus = getResolvedDriverTripDetailsStatus(tripDetails);
 
   if (mode === "dropoff") {
-    return resolvedStatus === "COMPLETE" || resolvedStatus === "CANCELLED"
-      ? getDriverTripStatusLabel(resolvedStatus)
-      : "ONGOING";
+    if (resolvedStatus === "COMPLETE" || resolvedStatus === "CANCELLED") {
+      return getDriverTripStatusLabel(resolvedStatus);
+    }
+
+    if (tripDetails?.rideTimer?.paused) {
+      return "PAUSED";
+    }
+
+    return resolvedStatus === "EXTRA_TIME" ? "EXTRA TIME" : "ONGOING";
   }
 
   return resolvedStatus ? getDriverTripStatusLabel(resolvedStatus) : "EN ROUTE";
@@ -52,11 +62,18 @@ export default function TripNavigationPage() {
   const tripId = decodeURIComponent(params.id ?? "");
   const requestedMode = searchParams.get("mode");
   const driverTripQuery = useDriverTrip(tripId || undefined);
-  const transitionDriverTripStatus = useTransitionDriverTripStatus();
-  const tripDetails = driverTripQuery.data?.data;
+  const rideActions = useRideActions(tripId);
+  const { details: tripDetails } = useTripWithQueuedRideActions(tripId, driverTripQuery.data?.data);
   const resolvedTripStatus = getResolvedDriverTripDetailsStatus(tripDetails);
   useEnsureTripTracking(tripId, resolvedTripStatus);
   const navigationMode = getNavigationMode({ mode: requestedMode, status: resolvedTripStatus });
+  const rideTimer = tripDetails?.rideTimer;
+  const isRiding = isRidingStatus(resolvedTripStatus) && Boolean(rideTimer?.actualStartAt) && !rideTimer?.actualEndAt;
+  const nowMs = useServerNow({
+    active: isRiding,
+    receivedAt: driverTripQuery.dataUpdatedAt,
+    serverNow: rideTimer?.serverNow,
+  });
 
   const pickupLat = tripDetails?.pickupLocation?.lat;
   const pickupLng = tripDetails?.pickupLocation?.lng;
@@ -77,32 +94,43 @@ export default function TripNavigationPage() {
   );
   const [isEndRideConfirmVisible, setEndRideConfirmVisible] = useState(false);
   const [isExitConfirmVisible, setExitConfirmVisible] = useState(false);
+  const [isPauseSheetOpen, setPauseSheetOpen] = useState(false);
   const customerPhoneNumber = compact(tripDetails?.customerPhoneNumber);
 
   const navigateBackToTrip = useCallback(() => {
     router.replace(tripId ? `/trip/${encodeURIComponent(tripId)}` : "/trips");
   }, [router, tripId]);
 
-  const transitionStatus = async (nextStatus: DriverTripStatus, nextMode?: TripNavigationMode) => {
+  const startRide = async () => {
     if (!tripId) {
       toast.error("Trip unavailable", "Please go back and select the trip again.");
       return;
     }
 
     try {
-      await transitionDriverTripStatus.mutateAsync({ driverTripStatus: nextStatus, tripId });
+      const result = await rideActions.run("start");
 
-      if (nextStatus === "COMPLETE") {
-        toast.success("Ride completed", "The trip has been marked complete.");
-        router.replace("/home");
-        return;
-      }
-
-      if (nextMode) {
-        router.replace(`/trip-navigation/${encodeURIComponent(tripId)}?mode=${nextMode}`);
+      if (result.ok) {
+        router.replace(`/trip-navigation/${encodeURIComponent(tripId)}?mode=dropoff`);
       }
     } catch (error) {
-      toast.error("Status update failed", getApiErrorMessage(error) ?? "Please try again.");
+      toast.error("Couldn't start the ride", getApiErrorMessage(error) ?? "Please try again.");
+    }
+  };
+
+  const endRide = async () => {
+    try {
+      const result = await rideActions.run("end");
+
+      if (result.ok) {
+        if (!result.queued) {
+          toast.success("Ride ended", "Your ride times are on the trip.");
+        }
+        // The trip screen shows the times and any extra time.
+        navigateBackToTrip();
+      }
+    } catch (error) {
+      toast.error("Couldn't end the ride", getApiErrorMessage(error) ?? "Please try again.");
     }
   };
 
@@ -144,6 +172,33 @@ export default function TripNavigationPage() {
     );
   }
 
+  const timerSlot =
+    isRiding && navigationMode === "dropoff" ? (
+      <div className="flex items-stretch gap-3">
+        <div className="min-w-0 flex-1">
+          <RideCounter clock={computeRideClock(rideTimer, nowMs)} timer={rideTimer} compact />
+        </div>
+        <button
+          type="button"
+          disabled={rideActions.pendingAction !== null}
+          onClick={() => (rideTimer?.paused ? void rideActions.run("resume") : setPauseSheetOpen(true))}
+          className={`pressable flex w-[88px] shrink-0 flex-col items-center justify-center gap-1 rounded-[20px] border text-[13px] font-semibold ${
+            rideTimer?.paused ? "border-accent/30 bg-accent-soft text-accent-text" : "border-border bg-surface text-text"
+          }`}
+          aria-label={rideTimer?.paused ? "Resume ride" : "Pause ride"}
+        >
+          {rideActions.pendingAction === "pause" || rideActions.pendingAction === "resume" ? (
+            <Spinner size={20} />
+          ) : rideTimer?.paused ? (
+            <Play size={20} />
+          ) : (
+            <Pause size={20} />
+          )}
+          {rideTimer?.paused ? "Resume" : "Pause"}
+        </button>
+      </div>
+    ) : undefined;
+
   return (
     <>
       <TripNavigationView
@@ -168,9 +223,20 @@ export default function TripNavigationPage() {
           openExternalUrl(url);
         }}
         onEndRide={() => setEndRideConfirmVisible(true)}
-        onStartRide={() => void transitionStatus("ONGOING", "dropoff")}
-        primaryActionLoading={transitionDriverTripStatus.isPending}
+        onStartRide={() => void startRide()}
+        primaryActionLoading={rideActions.pendingAction === "start" || rideActions.pendingAction === "end"}
         statusLabel={getTripStatusLabel(navigationMode, tripDetails)}
+        timerSlot={timerSlot}
+      />
+
+      <PauseReasonSheet
+        open={isPauseSheetOpen}
+        onClose={() => setPauseSheetOpen(false)}
+        loading={rideActions.pendingAction === "pause"}
+        onConfirm={(reason, note) => {
+          setPauseSheetOpen(false);
+          void rideActions.run("pause", { reason, note });
+        }}
       />
 
       <AlertDialog
@@ -178,11 +244,11 @@ export default function TripNavigationPage() {
         onClose={() => setEndRideConfirmVisible(false)}
         onConfirm={() => {
           setEndRideConfirmVisible(false);
-          void transitionStatus("COMPLETE");
+          void endRide();
         }}
-        title="End this ride?"
-        message="This will mark the ride complete and move it out of your active trip cycle."
-        confirmText="End Ride"
+        title={END_RIDE_TITLE}
+        message={END_RIDE_MESSAGE}
+        confirmText="End ride"
         confirmVariant="danger"
       />
 

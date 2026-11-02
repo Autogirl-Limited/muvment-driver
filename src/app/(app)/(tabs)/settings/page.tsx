@@ -8,12 +8,14 @@ import {
   AlertCircle,
   AlertTriangle,
   Bell,
+  CalendarDays,
   ChevronDown,
   ChevronUp,
   ClipboardList,
   Download,
   FileText,
   List,
+  Landmark,
   Lock,
   LogOut,
   MapPin,
@@ -35,6 +37,8 @@ import {
   useDriverNotificationSettings,
   useToggleDriverNotificationSettings,
 } from "@/lib/api/hooks/useDriverSettings";
+import { useBankAccount } from "@/lib/api/hooks/useBankAccount";
+import { ensurePushSubscription, removePushSubscription } from "@/lib/push/webPush";
 import { useInstallPrompt } from "@/providers/InstallPromptProvider";
 import { useTheme, type ThemePreference } from "@/providers/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
@@ -133,6 +137,8 @@ export default function SettingsPage() {
   const notificationSettingsQuery = useDriverNotificationSettings();
   const toggleDriverNotificationSettings = useToggleDriverNotificationSettings();
   const installPrompt = useInstallPrompt();
+  const bankAccountQuery = useBankAccount();
+  const currentBankAccount = bankAccountQuery.data?.data.current;
   const [locationPermission, setLocationPermission] = useState<PermissionStatus>("unknown");
   const [isLocationLoading, setLocationLoading] = useState(false);
   const [pushPermission, setPushPermission] = useState<PermissionStatus>("unknown");
@@ -215,6 +221,14 @@ export default function SettingsPage() {
       }
 
       const response = await toggleDriverNotificationSettings.mutateAsync();
+
+      // Keep this phone's Web Push subscription in step with the preference.
+      if (response.data.sendNotification) {
+        void ensurePushSubscription().catch(() => undefined);
+      } else {
+        void removePushSubscription();
+      }
+
       toast.success(response.data.sendNotification ? "Push notifications enabled" : "Push notifications disabled");
     } catch (error) {
       toast.error("Unable to update notifications", getApiErrorMessage(error) ?? "Please try again.");
@@ -225,6 +239,8 @@ export default function SettingsPage() {
     setSigningOut(true);
 
     try {
+      // Stop pushes to this phone before the session goes away.
+      await removePushSubscription();
       queryClient.clear();
       await signOut({ redirect: false });
       toast.success("Signed out successfully");
@@ -295,6 +311,28 @@ export default function SettingsPage() {
                 label="Location services"
               />
             }
+          />
+        </ListGroup>
+
+        <ListGroup header="Payments">
+          <ListRow
+            icon={<Landmark size={18} />}
+            iconTone={currentBankAccount || bankAccountQuery.isLoading ? "accent" : "warning"}
+            title="Payment account"
+            description={
+              currentBankAccount
+                ? `${currentBankAccount.bankName} · ${currentBankAccount.accountNumberMasked}`
+                : bankAccountQuery.isLoading
+                  ? "Loading..."
+                  : "Add the bank account your payments go to"
+            }
+            onClick={() => router.push("/payment-account")}
+          />
+          <ListRow
+            icon={<CalendarDays size={18} />}
+            title="My schedule"
+            description="Your shifts and off days for this week and next"
+            onClick={() => router.push("/my-schedule")}
           />
         </ListGroup>
 

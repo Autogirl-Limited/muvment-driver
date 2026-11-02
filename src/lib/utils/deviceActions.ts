@@ -11,7 +11,17 @@ export type CapturedPhoto = {
 
 export type CameraFacing = "environment" | "user";
 
-export const capturePhoto = (facing: CameraFacing = "environment"): Promise<CapturedPhoto | null> =>
+export type PhotoSource = "camera" | "gallery";
+
+/**
+ * Opens the camera (default) or, with source "gallery", the photo library.
+ * The gallery variant leaves out the `capture` attribute so the phone shows
+ * its normal picker (library, files, camera).
+ */
+export const capturePhoto = (
+  facing: CameraFacing = "environment",
+  source: PhotoSource = "camera",
+): Promise<CapturedPhoto | null> =>
   new Promise((resolve) => {
     if (typeof document === "undefined") {
       resolve(null);
@@ -21,7 +31,9 @@ export const capturePhoto = (facing: CameraFacing = "environment"): Promise<Capt
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/*";
-    input.setAttribute("capture", facing);
+    if (source === "camera") {
+      input.setAttribute("capture", facing);
+    }
     input.style.position = "fixed";
     input.style.opacity = "0";
     input.style.pointerEvents = "none";
@@ -66,6 +78,8 @@ export const capturePhoto = (facing: CameraFacing = "environment"): Promise<Capt
     document.body.appendChild(input);
     input.click();
   });
+
+export const pickPhotoFromGallery = () => capturePhoto("environment", "gallery");
 
 const buildMapsSearchUrl = (query: string) =>
   `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
