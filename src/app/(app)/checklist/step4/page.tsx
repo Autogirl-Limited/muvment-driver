@@ -17,9 +17,7 @@ import {
   useSubmitVehicleHealthChecklist,
   useTodayChecklist,
 } from "@/lib/api/hooks/usePreRideChecklist";
-import { useDriverTrips } from "@/lib/api/hooks/useTrips";
 import type { VehicleHealthCheckPhoto } from "@/lib/api/types";
-import { useChecklistMediaEntityId } from "@/lib/utils/checklistMediaEntity";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute, getPreRideGuardedStep } from "@/lib/utils/checklistNavigation";
 import { isChecklistPhotoUploaded, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
 import { usePersistentIdempotencyKey } from "@/lib/utils/persistentIdempotencyKey";
@@ -50,13 +48,6 @@ export default function ChecklistStep4Page() {
   const toast = useToast();
   const searchParams = useSearchParams();
   const activeTrackerId = searchParams.get("trackerId")?.trim() ?? "";
-  const tripIdParam = searchParams.get("tripId")?.trim();
-  const driverTripsQuery = useDriverTrips({ page: 0, size: 20 });
-  const mediaEntityId = useChecklistMediaEntityId({
-    trackerId: activeTrackerId,
-    tripId: tripIdParam,
-    trips: driverTripsQuery.data?.data.content ?? [],
-  });
   const [isConfirmVisible, setConfirmVisible] = useState(false);
   const submitVehicleHealthChecklist = useSubmitVehicleHealthChecklist();
   const submitDriverPhotoChecklist = useSubmitDriverPhotoChecklist();
@@ -164,7 +155,7 @@ export default function ChecklistStep4Page() {
   };
 
   const openCamera = () =>
-    void selfieSlot.capture({ key: "selfie", label: "driver-selfie", entityId: mediaEntityId, facing: "user" });
+    void selfieSlot.capture({ key: "selfie", label: "driver-selfie", facing: "user" });
 
   return (
     <>
@@ -201,7 +192,7 @@ export default function ChecklistStep4Page() {
             imageUri={health.photos[key].localUri}
             uploading={health.photos[key].status === "uploading"}
             failed={health.photos[key].status === "failed"}
-            onClick={() => void health.capture({ key, label: `vehicle-health-${HEALTH_PHOTO_TYPES[key]}`, entityId: mediaEntityId })}
+            onClick={() => void health.capture({ key, label: `vehicle-health-${HEALTH_PHOTO_TYPES[key]}` })}
             onRemove={() => void health.remove(key)}
           />
         ))}

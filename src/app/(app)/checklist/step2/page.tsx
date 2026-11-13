@@ -12,9 +12,8 @@ import {
   useSubmitExteriorChecklist,
   useTodayChecklist,
 } from "@/lib/api/hooks/usePreRideChecklist";
-import { useDriverTrips } from "@/lib/api/hooks/useTrips";
+import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import type { ExteriorUploadImage } from "@/lib/api/types";
-import { useChecklistMediaEntityId } from "@/lib/utils/checklistMediaEntity";
 import {
   getChecklistStepRoute,
   getGuardedChecklistStepRoute,
@@ -22,6 +21,7 @@ import {
   getPreRideStarterStepRoute,
 } from "@/lib/utils/checklistNavigation";
 import { isChecklistPhotoUploaded, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
+import { toLagosDate } from "@/lib/utils/lagosTime";
 import { usePersistentIdempotencyKey } from "@/lib/utils/persistentIdempotencyKey";
 import { useToast } from "@/providers/ToastProvider";
 
@@ -46,21 +46,22 @@ export default function ChecklistStep2Page() {
   const toast = useToast();
   const searchParams = useSearchParams();
   const activeTrackerId = searchParams.get("trackerId")?.trim() ?? "";
-  const starterTripId = searchParams.get("tripId")?.trim() ?? "";
-  const driverTripsQuery = useDriverTrips({ page: 0, size: 20 });
-  const mediaEntityId = useChecklistMediaEntityId({
-    trackerId: activeTrackerId,
-    tripId: starterTripId,
-    trips: driverTripsQuery.data?.data.content ?? [],
-  });
-  const canAccessChecklist = Boolean(activeTrackerId || starterTripId || mediaEntityId);
+  const currentUserQuery = useCurrentUser();
+  const currentUserId = currentUserQuery.data?.data.userId?.trim() ?? "";
+  const newChecklistScope = currentUserId ? `${currentUserId}-${toLagosDate(new Date())}` : "";
   const idempotencyKey = usePersistentIdempotencyKey(
-    `pre-ride-exterior-${activeTrackerId || starterTripId || mediaEntityId || "missing"}`,
+    activeTrackerId
+      ? `pre-ride-exterior-${activeTrackerId}`
+      : newChecklistScope
+        ? `pre-ride-exterior-${newChecklistScope}`
+        : "",
   );
   const submitExteriorChecklist = useSubmitExteriorChecklist();
   const todayChecklistQuery = useTodayChecklist();
   const checklistSummaryQuery = usePreRideChecklistSummary(activeTrackerId);
   const checklistSummary = checklistSummaryQuery.data?.data;
+  const todayChecklistState = todayChecklistQuery.data?.data.state ?? todayChecklistQuery.data?.data.status;
+  const canAccessChecklist = Boolean(activeTrackerId || todayChecklistState === "NOT_STARTED");
   const hasSavedExteriorChecklist = Boolean(checklistSummary?.exteriorPhotos?.valid);
   const required = usePhotoSlots(REQUIRED_KEYS);
   const damage = usePhotoList(3);
@@ -80,7 +81,7 @@ export default function ChecklistStep2Page() {
   const isNextEnabled =
     (hasSavedExteriorChecklist || requiredList.every(isChecklistPhotoUploaded)) &&
     canAccessChecklist &&
-    Boolean(mediaEntityId) &&
+    Boolean(activeTrackerId || newChecklistScope) &&
     (!activeTrackerId || Boolean(checklistSummary)) &&
     !hasPendingUpload &&
     !hasFailedUpload &&
@@ -96,17 +97,19 @@ export default function ChecklistStep2Page() {
     }
 
     toast.success("Pilot Report recovered", "Continuing from the checklist already started today.");
-    router.replace(getChecklistStepRoute("preRide", recoveredTrackerId, 3, { tripId: mediaEntityId }));
+    router.replace(getChecklistStepRoute("preRide", recoveredTrackerId, 3));
     return true;
   };
 
   const handleNext = async () => {
     if (!canAccessChecklist) {
-      toast.error("Report unavailable", "Please go back and open the report again.");
-      return;
-    }
-    if (!mediaEntityId) {
-      toast.error("Trip not linked", driverTripsQuery.isError ? "Cannot load trips. Please refresh and try again." : "Open the pilot report from Home again.");
+      if (todayChecklistQuery.isFetching) {
+        toast.error("Loading report", "Please wait a moment and try again.");
+      } else if (todayChecklistQuery.isError) {
+        toast.error("Report unavailable", "We could not verify today's report. Please check your connection and try again.");
+      } else {
+        toast.error("Report unavailable", "Today's report status has changed. Please reopen it from Home.");
+      }
       return;
     }
     if (!isNextEnabled) {
@@ -116,12 +119,19 @@ export default function ChecklistStep2Page() {
         toast.error("Exterior photos required", "Capture front, back, left, and right before continuing.");
       else if (activeTrackerId && !checklistSummary && !checklistSummaryQuery.isError)
         toast.error("Loading checklist", "Please wait a moment and try again.");
+      else if (!activeTrackerId && !newChecklistScope)
+        toast.error(
+          "Driver profile unavailable",
+          currentUserQuery.isError
+            ? "We could not load your profile. Please check your connection and try again."
+            : "Please wait a moment and try again.",
+        );
       return;
     }
 
     // Nothing freshly captured: skip straight ahead instead of re-submitting.
     if (activeTrackerId && hasSavedExteriorChecklist && !requiredList.some(isChecklistPhotoUploaded)) {
-      router.push(getChecklistStepRoute("preRide", activeTrackerId, 3, { tripId: mediaEntityId }));
+      router.push(getChecklistStepRoute("preRide", activeTrackerId, 3));
       return;
     }
 
@@ -139,7 +149,7 @@ export default function ChecklistStep2Page() {
     try {
       const response = await submitExteriorChecklist.mutateAsync({
         idempotencyKey,
-        idempotencyScopeId: starterTripId,
+        idempotencyScopeId: newChecklistScope,
         payload: {
           ...(activeTrackerId ? { checklistTrackerId: activeTrackerId } : {}),
           checklistType: "PRE_TRIP",
@@ -153,7 +163,7 @@ export default function ChecklistStep2Page() {
         throw new Error("Checklist tracker was not returned after exterior upload.");
       }
 
-      router.push(getChecklistStepRoute("preRide", resolvedTrackerId, 3, { tripId: mediaEntityId }));
+      router.push(getChecklistStepRoute("preRide", resolvedTrackerId, 3));
     } catch (error) {
       if (isChecklistStepConflictError(error)) {
         try {
@@ -183,7 +193,7 @@ export default function ChecklistStep2Page() {
           );
           return;
         }
-        if (starterTripId) router.replace(getPreRideStarterStepRoute(starterTripId, Math.min(step, 2)));
+        router.replace(getPreRideStarterStepRoute(Math.min(step, 2)));
       }}
       footer={{
         children: checklistSummaryQuery.isError && activeTrackerId ? "Retry progress check" : isSubmitting ? "Saving..." : "Next",
@@ -205,7 +215,7 @@ export default function ChecklistStep2Page() {
           imageUri={required.photos[key].localUri}
           uploading={required.photos[key].status === "uploading"}
           failed={required.photos[key].status === "failed"}
-          onClick={() => void required.capture({ key, label: `exterior-${REQUIRED_IMAGE_TYPES[key]}`, entityId: mediaEntityId })}
+          onClick={() => void required.capture({ key, label: `exterior-${REQUIRED_IMAGE_TYPES[key]}` })}
           onRemove={() => void required.remove(key)}
         />
       ))}
@@ -219,12 +229,12 @@ export default function ChecklistStep2Page() {
           imageUri={photo.localUri}
           uploading={photo.status === "uploading"}
           failed={photo.status === "failed"}
-          onClick={() => void damage.retake(index, "exterior-damage", mediaEntityId)}
+          onClick={() => void damage.retake(index, "exterior-damage")}
           onRemove={() => void damage.remove(index)}
         />
       ))}
       {damage.photos.length < 3 && (
-        <PhotoUploadCard title="Add Damage" subtitle="Optional close-up of any damage" onClick={() => void damage.add("exterior-damage", mediaEntityId)} />
+        <PhotoUploadCard title="Add Damage" subtitle="Optional close-up of any damage" onClick={() => void damage.add("exterior-damage")} />
       )}
     </ChecklistShell>
   );
