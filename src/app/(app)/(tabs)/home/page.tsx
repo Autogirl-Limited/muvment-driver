@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarDays, Car, ChevronRight, ClipboardList, Flag, RefreshCw } from "lucide-react";
 
@@ -29,6 +29,7 @@ const HOME_HEADER_TOP_COLOR = "#516C9F";
 export default function HomePage() {
   const router = useRouter();
   const toast = useToast();
+  const [isOpeningPilotReport, setIsOpeningPilotReport] = useState(false);
   useScreenThemeColor(HOME_HEADER_TOP_COLOR);
   const currentUserQuery = useCurrentUser();
   const driverTripStatisticsQuery = useDriverTripStatistics();
@@ -76,29 +77,78 @@ export default function HomePage() {
   }, [driverTripStatisticsQuery, driverTripsQuery, todayChecklistQuery]);
   const pull = usePullToRefresh(refresh);
 
-  const handleMissingTracker = () => {
-    void todayChecklistQuery.refetch();
+  const handleMissingTracker = async () => {
+    const refreshed = await todayChecklistQuery.refetch();
+    const trackerId = refreshed.data?.data.checklistTrackerId?.trim();
+
+    if (trackerId) {
+      return trackerId;
+    }
+
     toast.error("Pilot Report unavailable", "We could not find today's report yet. Please refresh and try again.");
+    return undefined;
   };
 
-  const openPreRideReport = () => {
-    if (!todayChecklistTrackerId) {
-      if (todayChecklistState === "NOT_STARTED" && preRidePilotReportTrip?.id) {
-        router.push(getPreRideStarterStepRoute(preRidePilotReportTrip.id, 1));
+  const openPreRideReport = async () => {
+    if (isOpeningPilotReport) return;
+
+    setIsOpeningPilotReport(true);
+
+    try {
+      if (todayChecklistTrackerId) {
+        router.push(`/checklist/step1?trackerId=${encodeURIComponent(todayChecklistTrackerId)}`);
         return;
       }
-      handleMissingTracker();
-      return;
+
+      if (todayChecklistState !== "NOT_STARTED") {
+        const trackerId = await handleMissingTracker();
+        if (trackerId) {
+          router.push(`/checklist/step1?trackerId=${encodeURIComponent(trackerId)}`);
+        }
+        return;
+      }
+
+      let starterTrip = preRidePilotReportTrip;
+
+      if (!starterTrip) {
+        const refreshedTrips = await driverTripsQuery.refetch();
+
+        if (refreshedTrips.isError) {
+          toast.error("Unable to load assigned trips", "Please check your connection and try again.");
+          return;
+        }
+
+        starterTrip = getAvailablePreRidePilotReportTrip(refreshedTrips.data?.data.content ?? []);
+      }
+
+      if (!starterTrip?.id) {
+        toast.error(
+          "No eligible assigned trip",
+          "Refresh your trips or contact operations if an assigned trip should be available.",
+        );
+        return;
+      }
+
+      router.push(getPreRideStarterStepRoute(starterTrip.id, 1));
+    } finally {
+      setIsOpeningPilotReport(false);
     }
-    router.push(`/checklist/step1?trackerId=${encodeURIComponent(todayChecklistTrackerId)}`);
   };
 
-  const openPostRideReport = () => {
-    if (!todayChecklistTrackerId) {
-      handleMissingTracker();
-      return;
+  const openPostRideReport = async () => {
+    if (isOpeningPilotReport) return;
+
+    setIsOpeningPilotReport(true);
+
+    try {
+      const trackerId = todayChecklistTrackerId ?? await handleMissingTracker();
+
+      if (trackerId) {
+        router.push(`/post-ride-checklist/step1?trackerId=${encodeURIComponent(trackerId)}`);
+      }
+    } finally {
+      setIsOpeningPilotReport(false);
     }
-    router.push(`/post-ride-checklist/step1?trackerId=${encodeURIComponent(todayChecklistTrackerId)}`);
   };
 
   return (
@@ -159,20 +209,34 @@ export default function HomePage() {
       {(shouldShowPreRidePilotReport || shouldShowPostRidePilotReport) && (
         <div className="mb-5 space-y-3 px-5">
           {shouldShowPreRidePilotReport && (
-            <button type="button" onClick={openPreRideReport} className="card pressable flex w-full items-center gap-3 p-4 text-left">
+            <button
+              type="button"
+              onClick={() => void openPreRideReport()}
+              disabled={driverTripsQuery.isLoading || isOpeningPilotReport}
+              className="card pressable flex w-full items-center gap-3 p-4 text-left disabled:cursor-wait disabled:opacity-70"
+            >
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-soft text-[#3538CD] dark:text-accent">
                 <ClipboardList size={20} />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="text-body block font-semibold text-text">Pre Ride Pilot Report</span>
-                <span className="text-footnote block text-text-3">Complete this before your first ride today.</span>
+                <span className="text-footnote block text-text-3">
+                  {driverTripsQuery.isLoading || isOpeningPilotReport
+                    ? "Preparing your report..."
+                    : "Complete this before your first ride today."}
+                </span>
               </span>
               <ChevronRight size={20} className="text-text-4" />
             </button>
           )}
 
           {shouldShowPostRidePilotReport && (
-            <button type="button" onClick={openPostRideReport} className="pressable flex w-full items-center gap-3 rounded-[20px] bg-navy p-4 text-left shadow-card">
+            <button
+              type="button"
+              onClick={() => void openPostRideReport()}
+              disabled={isOpeningPilotReport}
+              className="pressable flex w-full items-center gap-3 rounded-[20px] bg-navy p-4 text-left shadow-card disabled:cursor-wait disabled:opacity-70"
+            >
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 text-white">
                 <Flag size={20} />
               </span>
