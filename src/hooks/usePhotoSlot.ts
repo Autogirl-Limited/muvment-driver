@@ -53,11 +53,6 @@ export const usePhotoSlots = <TKey extends string>(keys: readonly TKey[]) => {
         return;
       }
 
-      if (!entityId) {
-        toast.error("Report unavailable", "Please go back and open the report again.");
-        return;
-      }
-
       if (beforeCapture && !beforeCapture()) {
         return;
       }
@@ -145,7 +140,7 @@ export const usePhotoList = (max: number) => {
     setPhotos((current) => current.map((photo, i) => (i === index ? next : photo)));
   };
 
-  const uploadAt = async (index: number, file: File, previewUrl: string | null, label: string, entityId: string) => {
+  const uploadAt = async (index: number, file: File, previewUrl: string | null, label: string, entityId?: string) => {
     const previous = photos[index];
     const previousFileUrl = previous && isChecklistPhotoUploaded(previous) ? previous.fileUrl : undefined;
 
@@ -167,11 +162,6 @@ export const usePhotoList = (max: number) => {
       return;
     }
 
-    if (!entityId) {
-      toast.error("Report unavailable", "Please go back and open the report again.");
-      return;
-    }
-
     const captured = await capturePhoto();
 
     if (!captured) {
@@ -188,11 +178,6 @@ export const usePhotoList = (max: number) => {
     const current = photos[index];
 
     if (!current || current.status === "uploading") {
-      return;
-    }
-
-    if (!entityId) {
-      toast.error("Report unavailable", "Please go back and open the report again.");
       return;
     }
 

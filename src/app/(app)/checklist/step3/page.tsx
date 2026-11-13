@@ -22,10 +22,8 @@ import {
   useUpdateInteriorMetadata,
   useVehicleFeatures,
 } from "@/lib/api/hooks/usePreRideChecklist";
-import { useDriverTrips } from "@/lib/api/hooks/useTrips";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import type { InteriorUploadImage, VehicleMetadata } from "@/lib/api/types";
-import { useChecklistMediaEntityId } from "@/lib/utils/checklistMediaEntity";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute, getPreRideGuardedStep } from "@/lib/utils/checklistNavigation";
 import { isChecklistPhotoUploaded, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
 import { usePersistentIdempotencyKey } from "@/lib/utils/persistentIdempotencyKey";
@@ -56,13 +54,6 @@ export default function ChecklistStep3Page() {
   const toast = useToast();
   const searchParams = useSearchParams();
   const activeTrackerId = searchParams.get("trackerId")?.trim() ?? "";
-  const tripIdParam = searchParams.get("tripId")?.trim();
-  const driverTripsQuery = useDriverTrips({ page: 0, size: 20 });
-  const mediaEntityId = useChecklistMediaEntityId({
-    trackerId: activeTrackerId,
-    tripId: tripIdParam,
-    trips: driverTripsQuery.data?.data.content ?? [],
-  });
   const submitInteriorChecklist = useSubmitInteriorChecklist();
   const updateInteriorMetadata = useUpdateInteriorMetadata();
   const reanalyzeInteriorChecklist = useReanalyzeInteriorChecklist();
@@ -252,7 +243,7 @@ export default function ChecklistStep3Page() {
           imageUri={slots.photos[key].localUri}
           uploading={slots.photos[key].status === "uploading"}
           failed={slots.photos[key].status === "failed"}
-          onClick={() => void slots.capture({ key, label: `interior-${INTERIOR_IMAGE_TYPES[key]}`, entityId: mediaEntityId })}
+          onClick={() => void slots.capture({ key, label: `interior-${INTERIOR_IMAGE_TYPES[key]}` })}
           onRemove={() => void slots.remove(key)}
         />
       ))}
@@ -285,7 +276,6 @@ export default function ChecklistStep3Page() {
           void slots.capture({
             key: "accessories",
             label: "accessories",
-            entityId: mediaEntityId,
             beforeCapture: () => {
               if (selectedFeatureIds.length === 0) {
                 toast.error("Select vehicle features", "Choose the features shown in the accessory photo first.");

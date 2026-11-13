@@ -184,19 +184,19 @@ const SERVER_UPLOAD_TIMEOUT_MS = 60000;
  */
 const uploadThroughServer = async ({
   blob,
+  entityId,
   fileName,
-  tripId,
 }: {
   blob: Blob;
+  entityId?: string;
   fileName: string;
-  tripId: string;
 }): Promise<ChecklistPhotoUploadResult> => {
   const send = (token?: string) =>
     new Promise<{ status: number; body: string }>((resolve, reject) => {
       const form = new FormData();
       form.append("file", blob, fileName);
       form.append("category", CHECKLIST_MEDIA_CATEGORY);
-      form.append("entityId", tripId);
+      if (entityId) form.append("entityId", entityId);
 
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `${getApiBaseUrl()}${MEDIA_UPLOAD_PATH}`);
@@ -245,13 +245,13 @@ const isFinalRefusal = (error: unknown) =>
 const uploadPreparedChecklistPhotoOnce = async (args: {
   attempt: number;
   blob: Blob;
+  entityId?: string;
   label: string;
-  tripId: string;
 }): Promise<ChecklistPhotoUploadResult> => {
   try {
     return await runMediaStage(
       "server-upload",
-      () => uploadThroughServer({ blob: args.blob, fileName: buildFileName(), tripId: args.tripId }),
+      () => uploadThroughServer({ blob: args.blob, entityId: args.entityId, fileName: buildFileName() }),
       { attempt: args.attempt, label: args.label, bytes: args.blob.size },
     );
   } catch (serverError) {
@@ -264,18 +264,18 @@ const uploadPreparedChecklistPhotoOnce = async (args: {
 const uploadDirectToStorage = async ({
   attempt,
   blob,
+  entityId,
   label,
-  tripId,
 }: {
   attempt: number;
   blob: Blob;
+  entityId?: string;
   label: string;
-  tripId: string;
 }): Promise<ChecklistPhotoUploadResult> => {
   const presignRequestPayload: CreatePresignedMediaUrlPayload = {
     category: CHECKLIST_MEDIA_CATEGORY,
     contentType: CHECKLIST_PHOTO_CONTENT_TYPE,
-    entityId: tripId,
+    ...(entityId ? { entityId } : {}),
     fileName: buildFileName(),
   };
 
@@ -329,14 +329,10 @@ const uploadDirectToStorage = async ({
 export const uploadChecklistPhoto = async (
   file: Blob,
   label: string,
-  tripId: string,
+  entityId?: string,
 ): Promise<ChecklistPhotoUploadResult> => {
   if (isAppKnownOffline()) {
     throw new Error(CHECKLIST_UPLOAD_FAILED_MESSAGE);
-  }
-
-  if (!tripId.trim()) {
-    throw new Error("Missing trip ID for photo upload.");
   }
 
   if (USE_PLACEHOLDER_UPLOAD) {
@@ -364,8 +360,8 @@ export const uploadChecklistPhoto = async (
       return await uploadPreparedChecklistPhotoOnce({
         attempt: attempt + 1,
         blob: preparedBlob,
+        entityId: entityId?.trim() || undefined,
         label,
-        tripId: tripId.trim(),
       });
     } catch (error) {
       lastError = error;
