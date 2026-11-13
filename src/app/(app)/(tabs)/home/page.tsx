@@ -18,7 +18,6 @@ import { useDriverTripStatistics, useDriverTrips } from "@/lib/api/hooks/useTrip
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import { getPreRideStarterStepRoute } from "@/lib/utils/checklistNavigation";
 import { toDriverTripCardModel } from "@/lib/utils/driverTrips";
-import { getAvailablePreRidePilotReportTrip } from "@/lib/utils/pilotReports";
 import { getUserDisplayName, getUserInitials } from "@/lib/utils/userProfile";
 import { useScreenThemeColor } from "@/providers/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
@@ -49,7 +48,6 @@ export default function HomePage() {
   const todayChecklist = todayChecklistQuery.data?.data;
   const todayChecklistState = todayChecklist?.state ?? todayChecklist?.status;
   const todayChecklistTrackerId = todayChecklist?.checklistTrackerId?.trim();
-  const preRidePilotReportTrip = getAvailablePreRidePilotReportTrip(driverTrips);
   const shouldShowPreRidePilotReport =
     todayChecklistState === "NOT_STARTED" || todayChecklistState === "PRE_TRIP_IN_PROGRESS";
   const shouldShowPostRidePilotReport =
@@ -108,28 +106,7 @@ export default function HomePage() {
         return;
       }
 
-      let starterTrip = preRidePilotReportTrip;
-
-      if (!starterTrip) {
-        const refreshedTrips = await driverTripsQuery.refetch();
-
-        if (refreshedTrips.isError) {
-          toast.error("Unable to load assigned trips", "Please check your connection and try again.");
-          return;
-        }
-
-        starterTrip = getAvailablePreRidePilotReportTrip(refreshedTrips.data?.data.content ?? []);
-      }
-
-      if (!starterTrip?.id) {
-        toast.error(
-          "No eligible assigned trip",
-          "Refresh your trips or contact operations if an assigned trip should be available.",
-        );
-        return;
-      }
-
-      router.push(getPreRideStarterStepRoute(starterTrip.id, 1));
+      router.push(getPreRideStarterStepRoute(1));
     } finally {
       setIsOpeningPilotReport(false);
     }
@@ -212,7 +189,7 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => void openPreRideReport()}
-              disabled={driverTripsQuery.isLoading || isOpeningPilotReport}
+              disabled={isOpeningPilotReport}
               className="card pressable flex w-full items-center gap-3 p-4 text-left disabled:cursor-wait disabled:opacity-70"
             >
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-soft text-[#3538CD] dark:text-accent">
@@ -221,7 +198,7 @@ export default function HomePage() {
               <span className="min-w-0 flex-1">
                 <span className="text-body block font-semibold text-text">Pre Ride Pilot Report</span>
                 <span className="text-footnote block text-text-3">
-                  {driverTripsQuery.isLoading || isOpeningPilotReport
+                  {isOpeningPilotReport
                     ? "Preparing your report..."
                     : "Complete this before your first ride today."}
                 </span>

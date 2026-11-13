@@ -23,7 +23,6 @@ export const getChecklistStepRoute = (
   flow: ChecklistFlow,
   checklistTrackerId: string,
   step: number,
-  options?: { tripId?: string },
 ) => {
   const trimmedTrackerId = checklistTrackerId.trim();
   const maxStep =
@@ -34,26 +33,16 @@ export const getChecklistStepRoute = (
   const params = new URLSearchParams();
 
   params.set("trackerId", trimmedTrackerId);
-  const tripId = options?.tripId?.trim();
-
-  if (tripId) {
-    params.set("tripId", tripId);
-  }
 
   return `${basePath}/step${safeStep}?${params.toString()}`;
 };
 
 export const getPreRideStarterStepRoute = (
-  tripId: string,
   step: number,
 ) => {
-  const trimmedTripId = tripId.trim();
   const safeStep = clampStep(step, PRE_RIDE_STEP_COUNT);
-  const params = new URLSearchParams();
 
-  params.set("tripId", trimmedTripId);
-
-  return `/checklist/step${safeStep}?${params.toString()}`;
+  return `/checklist/step${safeStep}`;
 };
 
 export const getPreRideUnlockedStep = (
