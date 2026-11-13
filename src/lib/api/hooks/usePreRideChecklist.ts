@@ -1,4 +1,5 @@
 import {
+  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
@@ -310,6 +311,46 @@ export const useChecklistTrackers = ({
       );
 
       return response.data;
+    },
+    enabled: Boolean(from && to) && enabled,
+    staleTime: 30_000,
+  });
+
+export const useInfiniteChecklistTrackers = ({
+  enabled = true,
+  from,
+  size = 50,
+  to,
+}: {
+  enabled?: boolean;
+  from?: string;
+  size?: number;
+  to?: string;
+}) =>
+  useInfiniteQuery<ChecklistTrackersResponse, Error>({
+    queryKey: [...CHECKLIST_TRACKERS_QUERY_KEY, "infinite", { from, size, to }],
+    queryFn: async ({ pageParam }) => {
+      if (!from || !to) {
+        throw new Error("Missing checklist tracker date range.");
+      }
+
+      const response = await apiFetchClient.get<ChecklistTrackersResponse>(
+        buildChecklistTrackersPath({
+          from,
+          page: Number(pageParam),
+          size,
+          to,
+        }),
+      );
+
+      return response.data;
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => {
+      const { currentPage, totalPages } = lastPage.data;
+      const nextPage = currentPage + 1;
+
+      return nextPage < totalPages ? nextPage : undefined;
     },
     enabled: Boolean(from && to) && enabled,
     staleTime: 30_000,

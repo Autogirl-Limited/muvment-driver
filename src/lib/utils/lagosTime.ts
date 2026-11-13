@@ -36,6 +36,20 @@ export const toLagosLocalIso = (date: Date) =>
 /** Lagos calendar date (YYYY-MM-DD) of an instant. */
 export const toLagosDate = (date: Date) => toLagosLocalIso(date).slice(0, 10);
 
+/** Inclusive Lagos calendar-day range for APIs that bind timezone-free LocalDateTime values. */
+export const getLagosLocalDateTimeRange = (days: number, now = new Date()) => {
+  const safeDays = Math.max(1, Math.trunc(days));
+  const toDate = toLagosDate(now);
+  const fromInstant = new Date(`${toDate}T12:00:00+01:00`);
+
+  fromInstant.setUTCDate(fromInstant.getUTCDate() - (safeDays - 1));
+
+  return {
+    from: `${toLagosDate(fromInstant)}T00:00:00`,
+    to: `${toDate}T23:59:59`,
+  };
+};
+
 const timeFormatter = new Intl.DateTimeFormat("en-US", {
   hour: "numeric",
   minute: "2-digit",
