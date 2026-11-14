@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { RotateCcw } from "lucide-react";
 
 import { ChecklistSectionTitle, ChecklistShell } from "@/components/checklist/ChecklistShell";
 import {
@@ -119,6 +120,15 @@ export default function ChecklistStep3Page() {
 
     if (!showAnalysisReview(getInteriorAnalysisMetadata(response.data))) {
       throw new Error("Dashboard analysis did not return odometer and fuel readings. Please retake the dashboard photo.");
+    }
+  };
+
+  const manuallyReanalyzeDashboard = async () => {
+    try {
+      await reanalyzeDashboard();
+      toast.success("Dashboard reanalyzed", "Review the updated odometer and fuel readings.");
+    } catch (error) {
+      toast.error("Dashboard analysis failed", getApiErrorMessage(error) ?? "Please try again.");
     }
   };
 
@@ -262,7 +272,19 @@ export default function ChecklistStep3Page() {
       <ChecklistSectionTitle className="mt-2">Vehicle Readings</ChecklistSectionTitle>
       <ReadingsFields odometer={odometer} fuelLevel={fuelLevel} onOdometerChange={setOdometer} onFuelLevelChange={setFuelLevel} />
 
-      {isAnalysisReviewVisible && analysisMetadata && <AnalysisReviewCard metadata={analysisMetadata} />}
+      {isAnalysisReviewVisible && analysisMetadata && (
+        <AnalysisReviewCard metadata={analysisMetadata}>
+          <button
+            type="button"
+            onClick={() => void manuallyReanalyzeDashboard()}
+            disabled={reanalyzeInteriorChecklist.isPending}
+            className="pressable inline-flex min-h-11 items-center gap-2 rounded-xl border border-accent/30 bg-surface px-4 text-[14px] font-semibold text-accent disabled:cursor-wait disabled:opacity-60"
+          >
+            <RotateCcw size={16} className={reanalyzeInteriorChecklist.isPending ? "animate-spin" : ""} />
+            {reanalyzeInteriorChecklist.isPending ? "Reanalyzing..." : "Reanalyze image"}
+          </button>
+        </AnalysisReviewCard>
+      )}
 
       {(vehicleFeatures.length > 0 || vehicleFeaturesQuery.isLoading) && (
         <ChecklistSectionTitle className="mt-2">Vehicle Features</ChecklistSectionTitle>
@@ -276,10 +298,10 @@ export default function ChecklistStep3Page() {
         }
       />
 
-      <ChecklistSectionTitle className="mt-4">Accessories Photo (Optional)</ChecklistSectionTitle>
+      <ChecklistSectionTitle className="mt-4">Accessories Photo</ChecklistSectionTitle>
       <PhotoUploadCard
         title="Accessories"
-        subtitle={slots.subtitleFor("accessories", "Optional photo of available flashy accessories")}
+        subtitle={slots.subtitleFor("accessories", "Photo of available flashy accessories")}
         imageUri={slots.photos.accessories.localUri}
         uploading={slots.photos.accessories.status === "uploading"}
         failed={slots.photos.accessories.status === "failed"}
