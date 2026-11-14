@@ -60,6 +60,18 @@ export const writeChecklistVehicleSelection = (
 
 export const clearChecklistVehicleSelection = (userId?: string | null) => {
   const normalizedUserId = userId?.trim();
-  if (!normalizedUserId) return;
-  getSessionStorage()?.removeItem(getStorageKey(normalizedUserId));
+  const sessionStorage = getSessionStorage();
+  if (!sessionStorage) return;
+
+  if (normalizedUserId) {
+    sessionStorage.removeItem(getStorageKey(normalizedUserId));
+    return;
+  }
+
+  const keysToRemove: string[] = [];
+  for (let index = 0; index < sessionStorage.length; index += 1) {
+    const key = sessionStorage.key(index);
+    if (key?.startsWith(`${STORAGE_KEY_PREFIX}:`)) keysToRemove.push(key);
+  }
+  keysToRemove.forEach((key) => sessionStorage.removeItem(key));
 };

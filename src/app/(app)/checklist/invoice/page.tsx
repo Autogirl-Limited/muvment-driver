@@ -72,7 +72,9 @@ export default function ChecklistInvoicePage() {
             <input
               value={invoiceNumber}
               onChange={(event) => {
-                setInvoiceNumber(event.target.value);
+                setInvoiceNumber(event.target.value.toUpperCase());
+                setSelectedVehicleId(undefined);
+                setVehicles([]);
                 if (lookupVehicles.isError) lookupVehicles.reset();
               }}
               onKeyDown={(event) => {
