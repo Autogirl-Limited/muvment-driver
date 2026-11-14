@@ -428,7 +428,24 @@ export interface ChecklistInvoiceVehicle {
   source: "ASSIGNED" | "INVOICE";
 }
 
-export type ChecklistInvoiceVehiclesResponse = ApiResponse<unknown>;
+export interface ChecklistInvoiceVehicleData {
+  id: string;
+  images?: Array<{
+    primary: boolean;
+    url: string;
+  }> | null;
+  licensePlateNumber: string;
+  vehicleIdentifier: string;
+}
+
+export interface ChecklistInvoiceVehiclesData {
+  driverAssignedVehicle?: ChecklistInvoiceVehicleData | null;
+  invoiceBookedVehicle?: ChecklistInvoiceVehicleData | null;
+  invoiceNumber: string;
+}
+
+export type ChecklistInvoiceVehiclesResponse =
+  ApiResponse<ChecklistInvoiceVehiclesData>;
 
 export interface VehicleMetadata {
   fuelLevelInPercentage: number;

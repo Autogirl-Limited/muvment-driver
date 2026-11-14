@@ -10,6 +10,7 @@ import { syncTrackingWithStatus } from "../../tracking/useTripTracker";
 import type {
   ApiErrorResponse,
   ChecklistInvoiceVehicle,
+  ChecklistInvoiceVehicleData,
   ChecklistInvoiceVehiclesResponse,
   ChecklistTrackersResponse,
   ChecklistType,
@@ -81,71 +82,37 @@ const buildChecklistStepSubmitPath = (step: string) =>
 const buildChecklistTrackerPath = (trackerId: string, step: string) =>
   `${DRIVER_APP_CHECKLISTS_PATH}/${encodeURIComponent(trackerId)}/${step}`;
 
-const getStringProperty = (value: Record<string, unknown>, keys: string[]) => {
-  for (const key of keys) {
-    const candidate = value[key];
-    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
-  }
-  return undefined;
-};
-
 const toChecklistInvoiceVehicle = (
-  value: unknown,
+  value: ChecklistInvoiceVehicleData | null | undefined,
   source: ChecklistInvoiceVehicle["source"],
 ): ChecklistInvoiceVehicle | undefined => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (!value) return undefined;
 
-  const record = value as Record<string, unknown>;
-  const id = getStringProperty(record, ["vehicleId", "id"]);
-  const name = getStringProperty(record, ["vehicleName", "name", "model"]);
-  const identifier = getStringProperty(record, [
-    "vehicleIdentifier",
-    "identifier",
-    "plateNumber",
-    "registrationNumber",
-  ]);
+  const id = value?.id?.trim();
+  const name = value?.vehicleIdentifier?.trim();
+  const identifier = value?.licensePlateNumber?.trim();
 
   if (!id || !name || !identifier) return undefined;
 
+  const primaryImage = value.images?.find((image) => image.primary)?.url?.trim();
+  const fallbackImage = value.images?.find((image) => image.url?.trim())?.url?.trim();
+
   return {
     id,
-    imageUrl: getStringProperty(record, ["primaryVehicleImage", "imageUrl", "imageURL"]),
+    imageUrl: primaryImage || fallbackImage,
     identifier,
     name,
     source,
   };
 };
 
-const normalizeChecklistInvoiceVehicles = (data: unknown): ChecklistInvoiceVehicle[] => {
-  if (!data || typeof data !== "object") return [];
-
-  const record = data as Record<string, unknown>;
+const normalizeChecklistInvoiceVehicles = (
+  data: ChecklistInvoiceVehiclesResponse["data"],
+): ChecklistInvoiceVehicle[] => {
   const candidates: Array<ChecklistInvoiceVehicle | undefined> = [
-    toChecklistInvoiceVehicle(
-      record.assignedVehicle ?? record.driverAssignedVehicle ?? record.driverVehicle,
-      "ASSIGNED",
-    ),
-    toChecklistInvoiceVehicle(
-      record.invoiceVehicle ?? record.bookingVehicle ?? record.tripVehicle,
-      "INVOICE",
-    ),
+    toChecklistInvoiceVehicle(data.driverAssignedVehicle, "ASSIGNED"),
+    toChecklistInvoiceVehicle(data.invoiceBookedVehicle, "INVOICE"),
   ];
-
-  if (Array.isArray(record.vehicles)) {
-    candidates.push(
-      ...record.vehicles.map((vehicle, index) =>
-        toChecklistInvoiceVehicle(vehicle, index === 0 ? "ASSIGNED" : "INVOICE"),
-      ),
-    );
-  }
-
-  if (Array.isArray(data)) {
-    candidates.push(
-      ...data.map((vehicle, index) =>
-        toChecklistInvoiceVehicle(vehicle, index === 0 ? "ASSIGNED" : "INVOICE"),
-      ),
-    );
-  }
 
   const vehicles = candidates.filter(
     (vehicle): vehicle is ChecklistInvoiceVehicle => Boolean(vehicle),

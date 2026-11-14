@@ -281,16 +281,19 @@ const handle = async (request: NextRequest, path: string) => {
     }
 
     return ok({
-      assignedVehicle: {
-        vehicleId: "vehicle-primary",
-        vehicleName: "Honda Accord",
-        vehicleIdentifier: "LAG-567-ABJ",
+      driverAssignedVehicle: {
+        id: "vehicle-primary",
+        images: [],
+        licensePlateNumber: "LAG-567-ABJ",
+        vehicleIdentifier: "Honda Accord",
       },
-      invoiceVehicle: {
-        vehicleId: `vehicle-${invoiceTrip.id}`,
-        vehicleName: invoiceTrip.vehicleName,
-        vehicleIdentifier: invoiceTrip.vehicleIdentifier,
+      invoiceBookedVehicle: {
+        id: `vehicle-${invoiceTrip.id}`,
+        images: [],
+        licensePlateNumber: invoiceTrip.vehicleIdentifier,
+        vehicleIdentifier: invoiceTrip.vehicleName,
       },
+      invoiceNumber,
     });
   }
   if (path === "driver-app/checklists/tracker") {
