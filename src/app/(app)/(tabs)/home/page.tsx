@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, Car, ChevronRight, ClipboardList, Flag, RefreshCw } from "lucide-react";
+import { CalendarDays, Car, ChevronRight, ClipboardList, Flag, ReceiptText, RefreshCw } from "lucide-react";
 
 import { Avatar } from "@/components/layout/Avatar";
 import { NotificationBellButton } from "@/components/notifications/NotificationBellButton";
@@ -17,6 +17,7 @@ import { useTodayChecklist } from "@/lib/api/hooks/usePreRideChecklist";
 import { useDriverTripStatistics, useDriverTrips } from "@/lib/api/hooks/useTrips";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import { getPreRideStarterStepRoute } from "@/lib/utils/checklistNavigation";
+import { clearChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import { toDriverTripCardModel } from "@/lib/utils/driverTrips";
 import { getUserDisplayName, getUserInitials } from "@/lib/utils/userProfile";
 import { useScreenThemeColor } from "@/providers/ThemeProvider";
@@ -106,6 +107,7 @@ export default function HomePage() {
         return;
       }
 
+      clearChecklistVehicleSelection(currentUser?.userId);
       router.push(getPreRideStarterStepRoute(1));
     } finally {
       setIsOpeningPilotReport(false);
@@ -202,6 +204,23 @@ export default function HomePage() {
                     ? "Preparing your report..."
                     : "Complete this before your first ride today."}
                 </span>
+              </span>
+              <ChevronRight size={20} className="text-text-4" />
+            </button>
+          )}
+
+          {todayChecklistState === "NOT_STARTED" && !todayChecklistTrackerId && (
+            <button
+              type="button"
+              onClick={() => router.push("/checklist/invoice")}
+              className="card pressable flex w-full items-center gap-3 border border-border p-4 text-left"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-fill text-text-2">
+                <ReceiptText size={20} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="text-body block font-semibold text-text">Start trip with invoice</span>
+                <span className="text-footnote block text-text-3">For emergency or newly assigned bookings.</span>
               </span>
               <ChevronRight size={20} className="text-text-4" />
             </button>

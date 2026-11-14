@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { ChecklistSectionTitle, ChecklistShell } from "@/components/checklist/ChecklistShell";
@@ -21,6 +21,8 @@ import {
   getPreRideStarterStepRoute,
 } from "@/lib/utils/checklistNavigation";
 import { isChecklistPhotoUploaded, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
+import type { ChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
+import { readChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import { toLagosDate } from "@/lib/utils/lagosTime";
 import { usePersistentIdempotencyKey } from "@/lib/utils/persistentIdempotencyKey";
 import { useToast } from "@/providers/ToastProvider";
@@ -48,6 +50,7 @@ export default function ChecklistStep2Page() {
   const activeTrackerId = searchParams.get("trackerId")?.trim() ?? "";
   const currentUserQuery = useCurrentUser();
   const currentUserId = currentUserQuery.data?.data.userId?.trim() ?? "";
+  const [vehicleSelection, setVehicleSelection] = useState<ChecklistVehicleSelection>();
   const newChecklistScope = currentUserId ? `${currentUserId}-${toLagosDate(new Date())}` : "";
   const idempotencyKey = usePersistentIdempotencyKey(
     activeTrackerId
@@ -65,6 +68,10 @@ export default function ChecklistStep2Page() {
   const hasSavedExteriorChecklist = Boolean(checklistSummary?.exteriorPhotos?.valid);
   const required = usePhotoSlots(REQUIRED_KEYS);
   const damage = usePhotoList(3);
+
+  useEffect(() => {
+    setVehicleSelection(readChecklistVehicleSelection(currentUserId));
+  }, [currentUserId]);
 
   useEffect(() => {
     if (!activeTrackerId || checklistSummaryQuery.isFetching || !checklistSummary) return;
@@ -154,6 +161,9 @@ export default function ChecklistStep2Page() {
           ...(activeTrackerId ? { checklistTrackerId: activeTrackerId } : {}),
           checklistType: "PRE_TRIP",
           uploadPhotos,
+          ...(!activeTrackerId && vehicleSelection?.vehicle.id
+            ? { vehicleId: vehicleSelection.vehicle.id }
+            : {}),
         },
         trackerId: activeTrackerId || undefined,
       });

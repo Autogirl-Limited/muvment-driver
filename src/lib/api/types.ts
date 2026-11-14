@@ -417,7 +417,35 @@ export interface SubmitExteriorChecklistPayload {
   checklistTrackerId?: string;
   completedAt?: string;
   uploadPhotos: ExteriorChecklistUploadedPhoto[];
+  vehicleId?: string;
 }
+
+export interface ChecklistInvoiceVehicle {
+  id: string;
+  imageUrl?: string | null;
+  name: string;
+  identifier: string;
+  source: "ASSIGNED" | "INVOICE";
+}
+
+export interface ChecklistInvoiceVehicleData {
+  id: string;
+  images?: Array<{
+    primary: boolean;
+    url: string;
+  }> | null;
+  licensePlateNumber: string;
+  vehicleIdentifier: string;
+}
+
+export interface ChecklistInvoiceVehiclesData {
+  driverAssignedVehicle?: ChecklistInvoiceVehicleData | null;
+  invoiceBookedVehicle?: ChecklistInvoiceVehicleData | null;
+  invoiceNumber: string;
+}
+
+export type ChecklistInvoiceVehiclesResponse =
+  ApiResponse<ChecklistInvoiceVehiclesData>;
 
 export interface VehicleMetadata {
   fuelLevelInPercentage: number;
@@ -494,6 +522,7 @@ export interface PreRideChecklistSummary {
   totalCompletionTime: string;
   vehicleHealthCheckPhotos: PreRideChecklistSummarySection;
   vehicleInfo?: {
+    vehicleId?: string;
     vehicleIdentifier: string;
     vehicleName: string;
   };

@@ -9,6 +9,9 @@ import { apiFetchClient } from "../client";
 import { syncTrackingWithStatus } from "../../tracking/useTripTracker";
 import type {
   ApiErrorResponse,
+  ChecklistInvoiceVehicle,
+  ChecklistInvoiceVehicleData,
+  ChecklistInvoiceVehiclesResponse,
   ChecklistTrackersResponse,
   ChecklistType,
   ChecklistStepResponse,
@@ -45,6 +48,8 @@ export const CHECKLIST_TRACKERS_QUERY_KEY = [
 
 export const TODAY_CHECKLIST_QUERY_KEY = ["today-checklist"] as const;
 
+const CHECKLIST_INVOICE_VEHICLES_PATH = `${DRIVER_APP_CHECKLISTS_PATH}/invoice`;
+
 const buildChecklistPath = (trackerId: string, step: string) =>
   `${DRIVER_APP_CHECKLISTS_PATH}/${encodeURIComponent(trackerId)}/${step}`;
 
@@ -76,6 +81,45 @@ const buildChecklistStepSubmitPath = (step: string) =>
 
 const buildChecklistTrackerPath = (trackerId: string, step: string) =>
   `${DRIVER_APP_CHECKLISTS_PATH}/${encodeURIComponent(trackerId)}/${step}`;
+
+const toChecklistInvoiceVehicle = (
+  value: ChecklistInvoiceVehicleData | null | undefined,
+  source: ChecklistInvoiceVehicle["source"],
+): ChecklistInvoiceVehicle | undefined => {
+  if (!value) return undefined;
+
+  const id = value?.id?.trim();
+  const name = value?.vehicleIdentifier?.trim();
+  const identifier = value?.licensePlateNumber?.trim();
+
+  if (!id || !name || !identifier) return undefined;
+
+  const primaryImage = value.images?.find((image) => image.primary)?.url?.trim();
+  const fallbackImage = value.images?.find((image) => image.url?.trim())?.url?.trim();
+
+  return {
+    id,
+    imageUrl: primaryImage || fallbackImage,
+    identifier,
+    name,
+    source,
+  };
+};
+
+const normalizeChecklistInvoiceVehicles = (
+  data: ChecklistInvoiceVehiclesResponse["data"],
+): ChecklistInvoiceVehicle[] => {
+  const candidates: Array<ChecklistInvoiceVehicle | undefined> = [
+    toChecklistInvoiceVehicle(data.driverAssignedVehicle, "ASSIGNED"),
+    toChecklistInvoiceVehicle(data.invoiceBookedVehicle, "INVOICE"),
+  ];
+
+  const vehicles = candidates.filter(
+    (vehicle): vehicle is ChecklistInvoiceVehicle => Boolean(vehicle),
+  );
+
+  return [...new Map(vehicles.map((vehicle) => [vehicle.id, vehicle])).values()];
+};
 
 const buildTransitionPath = (
   tripId: string,
@@ -279,6 +323,25 @@ export const useTodayChecklist = () =>
       return response.data;
     },
     staleTime: 15_000,
+  });
+
+export const useLookupChecklistInvoiceVehicles = () =>
+  useMutation<ChecklistInvoiceVehicle[], Error, string>({
+    mutationFn: async (invoiceNumber) => {
+      const normalizedInvoiceNumber = invoiceNumber.trim();
+      if (!normalizedInvoiceNumber) throw new Error("Enter a booking invoice number.");
+
+      const response = await apiFetchClient.get<ChecklistInvoiceVehiclesResponse>(
+        `${CHECKLIST_INVOICE_VEHICLES_PATH}/${encodeURIComponent(normalizedInvoiceNumber)}/vehicles`,
+      );
+      const vehicles = normalizeChecklistInvoiceVehicles(response.data.data);
+
+      if (vehicles.length === 0) {
+        throw new Error("No usable vehicle was returned for this invoice number.");
+      }
+
+      return vehicles;
+    },
   });
 
 export const useChecklistTrackers = ({
