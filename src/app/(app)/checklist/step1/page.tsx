@@ -1,15 +1,19 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { ChecklistSectionTitle, ChecklistShell } from "@/components/checklist/ChecklistShell";
 import { VehicleCard } from "@/components/checklist/VehicleCard";
 import { usePreRideChecklistSummary } from "@/lib/api/hooks/usePreRideChecklist";
+import { useCurrentUser } from "@/lib/api/hooks/useUsers";
+import type { ChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import {
   getChecklistStepRoute,
   getGuardedChecklistStepRoute,
   getPreRideStarterStepRoute,
 } from "@/lib/utils/checklistNavigation";
+import { readChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 
 const getDisplayValue = (value: string | null | undefined, fallback: string) => value?.trim() || fallback;
 
@@ -17,18 +21,25 @@ export default function ChecklistStep1Page() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeTrackerId = searchParams.get("trackerId")?.trim() || undefined;
+  const currentUserQuery = useCurrentUser();
+  const [vehicleSelection, setVehicleSelection] = useState<ChecklistVehicleSelection>();
   const checklistSummaryQuery = usePreRideChecklistSummary(activeTrackerId, { enabled: Boolean(activeTrackerId) });
   const checklistSummary = checklistSummaryQuery.data?.data;
+  const selectedVehicle = activeTrackerId ? undefined : vehicleSelection?.vehicle;
   const vehicleName = getDisplayValue(
-    checklistSummary?.vehicleInfo?.vehicleName,
+    checklistSummary?.vehicleInfo?.vehicleName ?? selectedVehicle?.name,
     "Vehicle unavailable",
   );
   const vehicleIdentifier = getDisplayValue(
-    checklistSummary?.vehicleInfo?.vehicleIdentifier,
+    checklistSummary?.vehicleInfo?.vehicleIdentifier ?? selectedVehicle?.identifier,
     "Identifier unavailable",
   );
   const hasChecklistSummary = Boolean(checklistSummary);
   const isCheckingProgress = Boolean(activeTrackerId) && !hasChecklistSummary && checklistSummaryQuery.isFetching;
+
+  useEffect(() => {
+    setVehicleSelection(readChecklistVehicleSelection(currentUserQuery.data?.data.userId));
+  }, [currentUserQuery.data?.data.userId]);
 
   return (
     <ChecklistShell
@@ -64,7 +75,12 @@ export default function ChecklistStep1Page() {
       }}
     >
       <ChecklistSectionTitle>Assigned Vehicle</ChecklistSectionTitle>
-      <VehicleCard model={vehicleName} plate={vehicleIdentifier} />
+      <VehicleCard
+        model={vehicleName}
+        plate={vehicleIdentifier}
+        imageUri={selectedVehicle?.imageUrl ?? undefined}
+        statusText={selectedVehicle ? "Selected from booking invoice" : undefined}
+      />
     </ChecklistShell>
   );
 }

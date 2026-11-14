@@ -267,6 +267,35 @@ const handle = async (request: NextRequest, path: string) => {
   if (path === "driver-app/checklists/today") {
     return ok({ checklistTrackerId: "tracker-1", state: "PRE_TRIP_IN_PROGRESS", preTripSummary: PRE_SUMMARY });
   }
+  const checklistInvoiceMatch = path.match(/^driver-app\/checklists\/invoice\/([^/]+)\/vehicles$/);
+  if (checklistInvoiceMatch) {
+    const invoiceNumber = decodeURIComponent(checklistInvoiceMatch[1]).toUpperCase();
+    const tripId = Object.entries(INVOICES).find(([, invoice]) => invoice === invoiceNumber)?.[0];
+    const invoiceTrip = TRIPS.find((trip) => trip.id === tripId);
+
+    if (!invoiceTrip) {
+      return NextResponse.json(
+        { status: "NOT_FOUND", message: "No booking was found for this invoice number.", timestamp: now() },
+        { status: 404 },
+      );
+    }
+
+    return ok({
+      driverAssignedVehicle: {
+        id: "vehicle-primary",
+        images: [],
+        licensePlateNumber: "LAG-567-ABJ",
+        vehicleIdentifier: "Honda Accord",
+      },
+      invoiceBookedVehicle: {
+        id: `vehicle-${invoiceTrip.id}`,
+        images: [],
+        licensePlateNumber: invoiceTrip.vehicleIdentifier,
+        vehicleIdentifier: invoiceTrip.vehicleName,
+      },
+      invoiceNumber,
+    });
+  }
   if (path === "driver-app/checklists/tracker") {
     return ok({
       content: [{ id: "tracker-1", status: "PRE_RIDE_OPEN", preRideCompletedAt: null }],
