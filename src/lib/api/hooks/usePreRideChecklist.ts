@@ -9,6 +9,8 @@ import { apiFetchClient } from "../client";
 import { syncTrackingWithStatus } from "../../tracking/useTripTracker";
 import type {
   ApiErrorResponse,
+  ChecklistInvoiceVehicle,
+  ChecklistInvoiceVehiclesResponse,
   ChecklistTrackersResponse,
   ChecklistType,
   ChecklistStepResponse,
@@ -45,6 +47,8 @@ export const CHECKLIST_TRACKERS_QUERY_KEY = [
 
 export const TODAY_CHECKLIST_QUERY_KEY = ["today-checklist"] as const;
 
+const CHECKLIST_INVOICE_VEHICLES_PATH = `${DRIVER_APP_CHECKLISTS_PATH}/invoice`;
+
 const buildChecklistPath = (trackerId: string, step: string) =>
   `${DRIVER_APP_CHECKLISTS_PATH}/${encodeURIComponent(trackerId)}/${step}`;
 
@@ -76,6 +80,79 @@ const buildChecklistStepSubmitPath = (step: string) =>
 
 const buildChecklistTrackerPath = (trackerId: string, step: string) =>
   `${DRIVER_APP_CHECKLISTS_PATH}/${encodeURIComponent(trackerId)}/${step}`;
+
+const getStringProperty = (value: Record<string, unknown>, keys: string[]) => {
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+  }
+  return undefined;
+};
+
+const toChecklistInvoiceVehicle = (
+  value: unknown,
+  source: ChecklistInvoiceVehicle["source"],
+): ChecklistInvoiceVehicle | undefined => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+
+  const record = value as Record<string, unknown>;
+  const id = getStringProperty(record, ["vehicleId", "id"]);
+  const name = getStringProperty(record, ["vehicleName", "name", "model"]);
+  const identifier = getStringProperty(record, [
+    "vehicleIdentifier",
+    "identifier",
+    "plateNumber",
+    "registrationNumber",
+  ]);
+
+  if (!id || !name || !identifier) return undefined;
+
+  return {
+    id,
+    imageUrl: getStringProperty(record, ["primaryVehicleImage", "imageUrl", "imageURL"]),
+    identifier,
+    name,
+    source,
+  };
+};
+
+const normalizeChecklistInvoiceVehicles = (data: unknown): ChecklistInvoiceVehicle[] => {
+  if (!data || typeof data !== "object") return [];
+
+  const record = data as Record<string, unknown>;
+  const candidates: Array<ChecklistInvoiceVehicle | undefined> = [
+    toChecklistInvoiceVehicle(
+      record.assignedVehicle ?? record.driverAssignedVehicle ?? record.driverVehicle,
+      "ASSIGNED",
+    ),
+    toChecklistInvoiceVehicle(
+      record.invoiceVehicle ?? record.bookingVehicle ?? record.tripVehicle,
+      "INVOICE",
+    ),
+  ];
+
+  if (Array.isArray(record.vehicles)) {
+    candidates.push(
+      ...record.vehicles.map((vehicle, index) =>
+        toChecklistInvoiceVehicle(vehicle, index === 0 ? "ASSIGNED" : "INVOICE"),
+      ),
+    );
+  }
+
+  if (Array.isArray(data)) {
+    candidates.push(
+      ...data.map((vehicle, index) =>
+        toChecklistInvoiceVehicle(vehicle, index === 0 ? "ASSIGNED" : "INVOICE"),
+      ),
+    );
+  }
+
+  const vehicles = candidates.filter(
+    (vehicle): vehicle is ChecklistInvoiceVehicle => Boolean(vehicle),
+  );
+
+  return [...new Map(vehicles.map((vehicle) => [vehicle.id, vehicle])).values()];
+};
 
 const buildTransitionPath = (
   tripId: string,
@@ -279,6 +356,25 @@ export const useTodayChecklist = () =>
       return response.data;
     },
     staleTime: 15_000,
+  });
+
+export const useLookupChecklistInvoiceVehicles = () =>
+  useMutation<ChecklistInvoiceVehicle[], Error, string>({
+    mutationFn: async (invoiceNumber) => {
+      const normalizedInvoiceNumber = invoiceNumber.trim();
+      if (!normalizedInvoiceNumber) throw new Error("Enter a booking invoice number.");
+
+      const response = await apiFetchClient.get<ChecklistInvoiceVehiclesResponse>(
+        `${CHECKLIST_INVOICE_VEHICLES_PATH}/${encodeURIComponent(normalizedInvoiceNumber)}/vehicles`,
+      );
+      const vehicles = normalizeChecklistInvoiceVehicles(response.data.data);
+
+      if (vehicles.length === 0) {
+        throw new Error("No usable vehicle was returned for this invoice number.");
+      }
+
+      return vehicles;
+    },
   });
 
 export const useChecklistTrackers = ({

@@ -26,6 +26,8 @@ import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import type { InteriorUploadImage, VehicleMetadata } from "@/lib/api/types";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute, getPreRideGuardedStep } from "@/lib/utils/checklistNavigation";
 import { isChecklistPhotoUploaded, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
+import type { ChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
+import { readChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import { usePersistentIdempotencyKey } from "@/lib/utils/persistentIdempotencyKey";
 import { useToast } from "@/providers/ToastProvider";
 
@@ -59,9 +61,14 @@ export default function ChecklistStep3Page() {
   const reanalyzeInteriorChecklist = useReanalyzeInteriorChecklist();
   const idempotencyKey = usePersistentIdempotencyKey(`pre-trip-interior-${activeTrackerId}`);
   const currentUserQuery = useCurrentUser();
-  const vehicleFeaturesQuery = useVehicleFeatures(currentUserQuery.data?.data.vehicleId, { enabled: !currentUserQuery.isLoading });
+  const [vehicleSelection, setVehicleSelection] = useState<ChecklistVehicleSelection>();
   const checklistSummaryQuery = usePreRideChecklistSummary(activeTrackerId);
   const checklistSummary = checklistSummaryQuery.data?.data;
+  const selectedVehicleId =
+    checklistSummary?.vehicleInfo?.vehicleId ??
+    vehicleSelection?.vehicle.id ??
+    currentUserQuery.data?.data.vehicleId;
+  const vehicleFeaturesQuery = useVehicleFeatures(selectedVehicleId, { enabled: !currentUserQuery.isLoading });
   const savedMetadata = checklistSummary?.interiorPhotos?.metadata;
   const hasSavedInteriorSubmission = checklistSummary?.interiorPhotos?.valid === true;
   const slots = usePhotoSlots(INTERIOR_KEYS);
@@ -71,6 +78,10 @@ export default function ChecklistStep3Page() {
   const [odometer, setOdometer] = useState("");
   const [fuelLevel, setFuelLevel] = useState("");
   const vehicleFeatures = vehicleFeaturesQuery.data?.data ?? [];
+
+  useEffect(() => {
+    setVehicleSelection(readChecklistVehicleSelection(currentUserQuery.data?.data.userId));
+  }, [currentUserQuery.data?.data.userId]);
 
   useEffect(() => {
     if (!activeTrackerId || checklistSummaryQuery.isFetching || !checklistSummary) return;

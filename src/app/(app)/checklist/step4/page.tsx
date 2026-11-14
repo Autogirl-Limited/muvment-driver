@@ -17,9 +17,11 @@ import {
   useSubmitVehicleHealthChecklist,
   useTodayChecklist,
 } from "@/lib/api/hooks/usePreRideChecklist";
+import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import type { VehicleHealthCheckPhoto } from "@/lib/api/types";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute, getPreRideGuardedStep } from "@/lib/utils/checklistNavigation";
 import { isChecklistPhotoUploaded, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
+import { clearChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import { usePersistentIdempotencyKey } from "@/lib/utils/persistentIdempotencyKey";
 import { useToast } from "@/providers/ToastProvider";
 
@@ -48,6 +50,7 @@ export default function ChecklistStep4Page() {
   const toast = useToast();
   const searchParams = useSearchParams();
   const activeTrackerId = searchParams.get("trackerId")?.trim() ?? "";
+  const currentUserQuery = useCurrentUser();
   const [isConfirmVisible, setConfirmVisible] = useState(false);
   const submitVehicleHealthChecklist = useSubmitVehicleHealthChecklist();
   const submitDriverPhotoChecklist = useSubmitDriverPhotoChecklist();
@@ -130,6 +133,7 @@ export default function ChecklistStep4Page() {
       }
 
       toast.success("Pre Ride Pilot Report submitted", "You are ready for your first ride today.");
+      clearChecklistVehicleSelection(currentUserQuery.data?.data.userId);
       router.replace("/home");
     } catch (error) {
       if (isChecklistStepConflictError(error)) {
@@ -138,6 +142,7 @@ export default function ChecklistStep4Page() {
           const state = todayResult.data?.data.state ?? todayResult.data?.data.status;
 
           if (state === "PRE_TRIP_COMPLETED" || state === "POST_TRIP_IN_PROGRESS" || state === "DAY_ENDED") {
+            clearChecklistVehicleSelection(currentUserQuery.data?.data.userId);
             router.replace("/home");
             return;
           }
