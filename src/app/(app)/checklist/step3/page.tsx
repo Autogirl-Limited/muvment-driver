@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { RotateCcw } from "lucide-react";
 
 import { ChecklistSectionTitle, ChecklistShell } from "@/components/checklist/ChecklistShell";
 import {
@@ -26,6 +27,8 @@ import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import type { InteriorUploadImage, VehicleMetadata } from "@/lib/api/types";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute, getPreRideGuardedStep } from "@/lib/utils/checklistNavigation";
 import { isChecklistPhotoUploaded, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
+import type { ChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
+import { readChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import { usePersistentIdempotencyKey } from "@/lib/utils/persistentIdempotencyKey";
 import { useToast } from "@/providers/ToastProvider";
 
@@ -59,9 +62,14 @@ export default function ChecklistStep3Page() {
   const reanalyzeInteriorChecklist = useReanalyzeInteriorChecklist();
   const idempotencyKey = usePersistentIdempotencyKey(`pre-trip-interior-${activeTrackerId}`);
   const currentUserQuery = useCurrentUser();
-  const vehicleFeaturesQuery = useVehicleFeatures(currentUserQuery.data?.data.vehicleId, { enabled: !currentUserQuery.isLoading });
+  const [vehicleSelection, setVehicleSelection] = useState<ChecklistVehicleSelection>();
   const checklistSummaryQuery = usePreRideChecklistSummary(activeTrackerId);
   const checklistSummary = checklistSummaryQuery.data?.data;
+  const selectedVehicleId =
+    checklistSummary?.vehicleInfo?.vehicleId ??
+    vehicleSelection?.vehicle.id ??
+    currentUserQuery.data?.data.vehicleId;
+  const vehicleFeaturesQuery = useVehicleFeatures(selectedVehicleId, { enabled: !currentUserQuery.isLoading });
   const savedMetadata = checklistSummary?.interiorPhotos?.metadata;
   const hasSavedInteriorSubmission = checklistSummary?.interiorPhotos?.valid === true;
   const slots = usePhotoSlots(INTERIOR_KEYS);
@@ -71,6 +79,10 @@ export default function ChecklistStep3Page() {
   const [odometer, setOdometer] = useState("");
   const [fuelLevel, setFuelLevel] = useState("");
   const vehicleFeatures = vehicleFeaturesQuery.data?.data ?? [];
+
+  useEffect(() => {
+    setVehicleSelection(readChecklistVehicleSelection(currentUserQuery.data?.data.userId));
+  }, [currentUserQuery.data?.data.userId]);
 
   useEffect(() => {
     if (!activeTrackerId || checklistSummaryQuery.isFetching || !checklistSummary) return;
@@ -108,6 +120,15 @@ export default function ChecklistStep3Page() {
 
     if (!showAnalysisReview(getInteriorAnalysisMetadata(response.data))) {
       throw new Error("Dashboard analysis did not return odometer and fuel readings. Please retake the dashboard photo.");
+    }
+  };
+
+  const manuallyReanalyzeDashboard = async () => {
+    try {
+      await reanalyzeDashboard();
+      toast.success("Dashboard reanalyzed", "Review the updated odometer and fuel readings.");
+    } catch (error) {
+      toast.error("Dashboard analysis failed", getApiErrorMessage(error) ?? "Please try again.");
     }
   };
 
@@ -251,7 +272,19 @@ export default function ChecklistStep3Page() {
       <ChecklistSectionTitle className="mt-2">Vehicle Readings</ChecklistSectionTitle>
       <ReadingsFields odometer={odometer} fuelLevel={fuelLevel} onOdometerChange={setOdometer} onFuelLevelChange={setFuelLevel} />
 
-      {isAnalysisReviewVisible && analysisMetadata && <AnalysisReviewCard metadata={analysisMetadata} />}
+      {isAnalysisReviewVisible && analysisMetadata && (
+        <AnalysisReviewCard metadata={analysisMetadata}>
+          <button
+            type="button"
+            onClick={() => void manuallyReanalyzeDashboard()}
+            disabled={reanalyzeInteriorChecklist.isPending}
+            className="pressable inline-flex min-h-11 items-center gap-2 rounded-xl border border-accent/30 bg-surface px-4 text-[14px] font-semibold text-accent disabled:cursor-wait disabled:opacity-60"
+          >
+            <RotateCcw size={16} className={reanalyzeInteriorChecklist.isPending ? "animate-spin" : ""} />
+            {reanalyzeInteriorChecklist.isPending ? "Reanalyzing..." : "Reanalyze image"}
+          </button>
+        </AnalysisReviewCard>
+      )}
 
       {(vehicleFeatures.length > 0 || vehicleFeaturesQuery.isLoading) && (
         <ChecklistSectionTitle className="mt-2">Vehicle Features</ChecklistSectionTitle>
@@ -265,10 +298,10 @@ export default function ChecklistStep3Page() {
         }
       />
 
-      <ChecklistSectionTitle className="mt-4">Accessories Photo (Optional)</ChecklistSectionTitle>
+      <ChecklistSectionTitle className="mt-4">Accessories Photo</ChecklistSectionTitle>
       <PhotoUploadCard
         title="Accessories"
-        subtitle={slots.subtitleFor("accessories", "Optional photo of available flashy accessories")}
+        subtitle={slots.subtitleFor("accessories", "Photo of available flashy accessories")}
         imageUri={slots.photos.accessories.localUri}
         uploading={slots.photos.accessories.status === "uploading"}
         failed={slots.photos.accessories.status === "failed"}
