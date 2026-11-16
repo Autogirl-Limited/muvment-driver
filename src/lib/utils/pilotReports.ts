@@ -1,4 +1,5 @@
 import type {
+  ChecklistInvoiceVehicle,
   ChecklistTracker,
   DriverTrip,
   PostRideChecklistAggregate,
@@ -147,3 +148,28 @@ export const getAssignedVehicleTrip = (trips: DriverTrip[], today = new Date()) 
   [...trips]
     .filter((trip) => Boolean(trip.vehicleIdentifier?.trim() || trip.vehicleName?.trim()))
     .sort((left, right) => getTripTime(right) - getTripTime(left))[0];
+
+/**
+ * The driver's vehicle from their trips, shaped like an invoice-lookup vehicle,
+ * for when the lookup returns no assigned vehicle. Needs the trip's vehicle id.
+ */
+export const getTripAssignedVehicle = (
+  trips: DriverTrip[],
+  today = new Date(),
+): ChecklistInvoiceVehicle | undefined => {
+  const trip = getAssignedVehicleTrip(trips, today);
+  const id = trip?.vehicleId?.trim();
+  const name = trip?.vehicleIdentifier?.trim() || trip?.vehicleName?.trim();
+
+  if (!trip || !id || !name) {
+    return undefined;
+  }
+
+  return {
+    id,
+    identifier: trip.vehicleName?.trim() && trip.vehicleName.trim() !== name ? trip.vehicleName.trim() : "From your trips",
+    imageUrl: trip.primaryVehicleImage?.trim() || undefined,
+    name,
+    source: "TRIP",
+  };
+};
