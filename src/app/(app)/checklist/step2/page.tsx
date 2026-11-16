@@ -8,6 +8,7 @@ import { PhotoUploadCard } from "@/components/checklist/PhotoUploadCard";
 import { usePhotoList, usePhotoSlots } from "@/hooks/usePhotoSlot";
 import { getApiErrorMessage, isChecklistStepConflictError } from "@/lib/api/errors";
 import {
+  useAssignedVehicle,
   usePreRideChecklistSummary,
   useSubmitExteriorChecklist,
   useTodayChecklist,
@@ -62,6 +63,7 @@ export default function ChecklistStep2Page() {
   const submitExteriorChecklist = useSubmitExteriorChecklist();
   const todayChecklistQuery = useTodayChecklist();
   const checklistSummaryQuery = usePreRideChecklistSummary(activeTrackerId);
+  const assignedVehicleQuery = useAssignedVehicle();
   const checklistSummary = checklistSummaryQuery.data?.data;
   const todayChecklistState = todayChecklistQuery.data?.data.state ?? todayChecklistQuery.data?.data.status;
   const canAccessChecklist = Boolean(activeTrackerId || todayChecklistState === "NOT_STARTED");
@@ -72,6 +74,15 @@ export default function ChecklistStep2Page() {
   useEffect(() => {
     setVehicleSelection(readChecklistVehicleSelection(currentUserId));
   }, [currentUserId]);
+
+  // A new report needs a vehicle: send the driver back to step 1, which explains why.
+  useEffect(() => {
+    if (activeTrackerId || !currentUserId) return;
+    if (assignedVehicleQuery.isLoading || assignedVehicleQuery.isError) return;
+    if (!assignedVehicleQuery.data && !readChecklistVehicleSelection(currentUserId)) {
+      router.replace(getPreRideStarterStepRoute(1));
+    }
+  }, [activeTrackerId, assignedVehicleQuery.data, assignedVehicleQuery.isError, assignedVehicleQuery.isLoading, currentUserId, router]);
 
   useEffect(() => {
     if (!activeTrackerId || checklistSummaryQuery.isFetching || !checklistSummary) return;
