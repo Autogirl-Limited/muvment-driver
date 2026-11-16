@@ -7,6 +7,7 @@ import { ChevronLeft, Flag, MapPin, Maximize2, Navigation, Phone } from "lucide-
 
 import { fetchGoogleDrivingRoute, isGoogleRoutesConfigured, type GoogleRouteResult } from "@/lib/api/googleRoutes";
 import { useTripTracker } from "@/lib/tracking/useTripTracker";
+import { clearPickupArrival, readPickupArrival, writePickupArrival } from "@/lib/utils/pickupArrival";
 import { getMapsDirectionsUrl } from "@/lib/utils/deviceActions";
 import { getDistanceMeters, getLinearRouteCoordinates, isValidCoordinate, type MapCoordinate } from "@/lib/utils/geo";
 import { formatArrivalTime, formatRouteDistance, formatRouteDuration } from "@/lib/utils/tripRouteFormat";
@@ -21,6 +22,8 @@ type TripNavigationViewProps = {
   destinationCoordinate: MapCoordinate | null;
   mode: TripNavigationMode;
   onArrived?: () => void;
+  /** Keys the saved arrival time, so waiting time survives leaving the app. */
+  tripId?: string;
   onBack: () => void;
   onCall?: () => void;
   onEndRide?: () => void;
@@ -211,6 +214,7 @@ export const TripNavigationView = ({
   primaryActionLoading,
   statusLabel,
   timerSlot,
+  tripId,
 }: TripNavigationViewProps) => {
   const { isDark } = useTheme();
   const tracker = useTripTracker();
@@ -223,8 +227,11 @@ export const TripNavigationView = ({
   const [route, setRoute] = useState<GoogleRouteResult | null>(null);
   const [routeSource, setRouteSource] = useState<"google" | "fallback" | null>(null);
   const [isRouteLoading, setRouteLoading] = useState(false);
-  const [isWaiting, setIsWaiting] = useState(false);
-  const [waitingSeconds, setWaitingSeconds] = useState(0);
+  const [arrivedAt, setArrivedAt] = useState<number | null>(() => (mode === "pickup" ? readPickupArrival(tripId) : null));
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [routeFetchedAt, setRouteFetchedAt] = useState(() => Date.now());
+  const isWaiting = arrivedAt !== null;
+  const waitingSeconds = arrivedAt === null ? 0 : Math.max(0, Math.floor((nowMs - arrivedAt) / 1000));
   const [cameraMode, setCameraMode] = useState<CameraMode>("follow");
 
   const fix: DriverFix | null = trackerSharing && tracker.lastFix ? tracker.lastFix : ownFix;
@@ -279,13 +286,35 @@ export const TripNavigationView = ({
   }, [fix?.latitude, fix?.longitude]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!isWaiting) {
-      setWaitingSeconds(0);
-      return;
+    setRouteFetchedAt(Date.now());
+  }, [route]);
+
+  // Waiting time is derived from the saved arrival time, so refresh it every
+  // second and again as soon as the app comes back to the foreground.
+  const hasRoute = route !== null;
+  useEffect(() => {
+    if (!isWaiting && !hasRoute) return;
+    const tick = () => setNowMs(Date.now());
+    tick();
+    const id = setInterval(tick, 1000);
+    document.addEventListener("visibilitychange", tick);
+    window.addEventListener("focus", tick);
+    window.addEventListener("pageshow", tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+      window.removeEventListener("focus", tick);
+      window.removeEventListener("pageshow", tick);
+    };
+  }, [isWaiting, hasRoute]);
+
+  // Once the ride has started the pickup arrival no longer applies.
+  useEffect(() => {
+    if (mode === "dropoff") {
+      clearPickupArrival(tripId);
+      setArrivedAt(null);
     }
-    const id = setInterval(() => setWaitingSeconds((s) => s + 1), 1000);
-    return () => clearInterval(id);
-  }, [isWaiting]);
+  }, [mode, tripId]);
 
   // Route: Google traffic-aware when configured, refreshed after the car moves 75 m.
   useEffect(() => {
@@ -345,9 +374,15 @@ export const TripNavigationView = ({
   const nearPickup =
     mode === "pickup" && !isWaiting && distanceToDestination !== null && distanceToDestination <= ARRIVAL_NUDGE_METERS;
 
-  const durationLabel = formatRouteDuration(route?.durationSeconds) ?? "--";
+  // The route is only refetched after the car moves, so count the ETA down
+  // between refreshes instead of leaving it frozen.
+  const remainingRouteSeconds =
+    route?.durationSeconds != null
+      ? Math.max(0, route.durationSeconds - Math.floor((nowMs - routeFetchedAt) / 1000))
+      : undefined;
+  const durationLabel = formatRouteDuration(remainingRouteSeconds) ?? "--";
   const distanceLabel = formatRouteDistance(route?.distanceMeters) ?? "--";
-  const arrivalLabel = formatArrivalTime(route?.durationSeconds) ?? "--";
+  const arrivalLabel = formatArrivalTime(remainingRouteSeconds) ?? "--";
   const routeHint =
     routeSource === "fallback" ? "Estimated route" : routeSource === "google" ? "Live traffic route" : "Preparing route";
   const primaryActionLabel =
@@ -393,7 +428,10 @@ export const TripNavigationView = ({
       onStartRide?.();
       return;
     }
-    setIsWaiting(true);
+    const arrivalTime = Date.now();
+    writePickupArrival(tripId, arrivalTime);
+    setNowMs(arrivalTime);
+    setArrivedAt(arrivalTime);
     onArrived?.();
   };
 

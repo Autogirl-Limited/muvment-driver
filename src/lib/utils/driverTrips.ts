@@ -4,6 +4,7 @@ import type {
   DriverTripStatus,
   StandardTripStatus,
 } from "../api/types";
+import { LAGOS_TIME_ZONE, parseLagos } from "./lagosTime";
 
 export type DriverTripBadgeType = "booking" | "owner" | "status";
 
@@ -58,24 +59,19 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
   month: "short",
   weekday: "long",
+  timeZone: LAGOS_TIME_ZONE,
 });
 
 const timeFormatter = new Intl.DateTimeFormat("en-US", {
   hour: "numeric",
   minute: "2-digit",
+  timeZone: LAGOS_TIME_ZONE,
 });
 
 const compact = (value?: string | null) => value?.trim() || undefined;
 
-const parseDate = (value?: string | null) => {
-  if (!value) {
-    return undefined;
-  }
-
-  const date = new Date(value);
-
-  return Number.isNaN(date.getTime()) ? undefined : date;
-};
+// API times are Lagos wall-clock times, whatever the phone's time zone.
+const parseDate = (value?: string | null) => parseLagos(value);
 
 const getDurationLabel = (duration?: number | null) => {
   if (duration === undefined || duration === null) {
@@ -450,13 +446,21 @@ export const toDriverTripCardModel = (
   };
 };
 
+export type DriverTripSortOrder = "soonest-first" | "latest-first";
+
 export const groupDriverTripsForCards = (
   trips: DriverTrip[],
   fallbackStatus?: DriverTripStatus,
+  order: DriverTripSortOrder = "soonest-first",
 ): DriverTripSection[] => {
   const groupedTrips = new Map<string, DriverTripCardModel[]>();
+  const compare =
+    order === "latest-first"
+      ? (first: DriverTrip, second: DriverTrip) =>
+          compareDriverTripsBySchedule(second, first)
+      : compareDriverTripsBySchedule;
 
-  [...trips].sort(compareDriverTripsBySchedule).forEach((trip) => {
+  [...trips].sort(compare).forEach((trip) => {
     const sectionTitle = getDriverTripSectionTitle(trip);
     const sectionTrips = groupedTrips.get(sectionTitle) ?? [];
 

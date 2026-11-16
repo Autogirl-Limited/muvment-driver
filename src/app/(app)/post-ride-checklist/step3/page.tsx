@@ -6,11 +6,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ChecklistSectionTitle, ChecklistShell } from "@/components/checklist/ChecklistShell";
 import {
   AnalysisReviewCard,
+  DashboardAnalysisNotice,
   FeatureChips,
   getInteriorAnalysisMetadata,
   isMetadataValid,
   parseNumericInput,
   ReadingsFields,
+  useDashboardAnalysisStatus,
 } from "@/components/checklist/InteriorStep";
 import { PhotoUploadCard } from "@/components/checklist/PhotoUploadCard";
 import { BackButton } from "@/components/ui/BackButton";
@@ -89,8 +91,10 @@ export default function PostRideStep3Page() {
   const fuelLevelInPercentage = parseNumericInput(fuelLevel);
   const hasValidMetadata = isMetadataValid(odometerKM, fuelLevelInPercentage);
   const hasDashboardUploaded = isChecklistPhotoUploaded(slots.photos.dashboard);
-  const isSubmitting =
-    submitInteriorChecklist.isPending || updateInteriorMetadata.isPending || reanalyzeInteriorChecklist.isPending;
+  const isAnalyzing = submitInteriorChecklist.isPending || reanalyzeInteriorChecklist.isPending;
+  const analysis = useDashboardAnalysisStatus(isAnalyzing);
+  // Once the driver chooses manual entry they no longer wait on the AI.
+  const isSubmitting = updateInteriorMetadata.isPending || (isAnalyzing && !analysis.manual);
   const isNextEnabled =
     Boolean(activeTrackerId) &&
     Boolean(aggregate) &&
@@ -102,10 +106,19 @@ export default function PostRideStep3Page() {
   const showAnalysisReview = (metadata: VehicleMetadata | undefined) => {
     if (!metadata) return false;
     setAnalysisMetadata(metadata);
-    setOdometer(typeof metadata.odometerKM === "number" ? String(metadata.odometerKM) : "");
-    setFuelLevel(typeof metadata.fuelLevelInPercentage === "number" ? String(metadata.fuelLevelInPercentage) : "");
+    // Never overwrite what the driver typed after choosing manual entry.
+    if (!analysis.manualRef.current) {
+      setOdometer(typeof metadata.odometerKM === "number" ? String(metadata.odometerKM) : "");
+      setFuelLevel(typeof metadata.fuelLevelInPercentage === "number" ? String(metadata.fuelLevelInPercentage) : "");
+    }
     setAnalysisReviewVisible(true);
+    analysis.clearFailed();
     return true;
+  };
+
+  const enterReadingsManually = () => {
+    analysis.enterManually();
+    setAnalysisReviewVisible(true);
   };
 
   const reanalyzeDashboard = async () => {
@@ -144,6 +157,7 @@ export default function PostRideStep3Page() {
 
   const handleNext = async () => {
     if (!activeTrackerId || !isNextEnabled) return;
+    analysis.clearFailed();
 
     try {
       if (isAnalysisReviewVisible) {
@@ -188,6 +202,7 @@ export default function PostRideStep3Page() {
           // keep original error
         }
       }
+      if (!isAnalysisReviewVisible) analysis.markFailed();
       toast.error(
         isAnalysisReviewVisible ? "Dashboard correction failed" : "Interior photos failed",
         getApiErrorMessage(error) ?? "Please try again.",
@@ -215,7 +230,7 @@ export default function PostRideStep3Page() {
       footer={{
         children: aggregateQuery.isError
           ? "Retry progress check"
-          : isSubmitting
+          : isAnalyzing && !analysis.manual
             ? "Analyzing dashboard..."
             : isAnalysisReviewVisible
               ? "Confirm readings"
@@ -277,10 +292,23 @@ export default function PostRideStep3Page() {
         </>
       )}
 
+      <DashboardAnalysisNotice
+        analyzing={isAnalyzing}
+        failed={analysis.failed && hasDashboardUploaded}
+        manual={analysis.manual && !analysisMetadata}
+        slow={analysis.slow}
+        onManual={enterReadingsManually}
+        onRetry={() => void handleNext()}
+      />
+
       {isAnalysisReviewVisible && analysisMetadata && (
         <AnalysisReviewCard metadata={analysisMetadata}>
           <ReadingsFields odometer={odometer} fuelLevel={fuelLevel} onOdometerChange={setOdometer} onFuelLevelChange={setFuelLevel} />
         </AnalysisReviewCard>
+      )}
+
+      {analysis.manual && !analysisMetadata && (
+        <ReadingsFields odometer={odometer} fuelLevel={fuelLevel} onOdometerChange={setOdometer} onFuelLevelChange={setFuelLevel} />
       )}
     </ChecklistShell>
   );

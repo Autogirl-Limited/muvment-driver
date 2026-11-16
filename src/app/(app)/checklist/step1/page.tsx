@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ChecklistSectionTitle, ChecklistShell } from "@/components/checklist/ChecklistShell";
 import { VehicleCard } from "@/components/checklist/VehicleCard";
 import { usePreRideChecklistSummary } from "@/lib/api/hooks/usePreRideChecklist";
+import { useDriverTrips } from "@/lib/api/hooks/useTrips";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import type { ChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import {
@@ -14,6 +15,7 @@ import {
   getPreRideStarterStepRoute,
 } from "@/lib/utils/checklistNavigation";
 import { readChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
+import { getAssignedVehicleTrip } from "@/lib/utils/pilotReports";
 
 const getDisplayValue = (value: string | null | undefined, fallback: string) => value?.trim() || fallback;
 
@@ -26,12 +28,16 @@ export default function ChecklistStep1Page() {
   const checklistSummaryQuery = usePreRideChecklistSummary(activeTrackerId, { enabled: Boolean(activeTrackerId) });
   const checklistSummary = checklistSummaryQuery.data?.data;
   const selectedVehicle = activeTrackerId ? undefined : vehicleSelection?.vehicle;
+  // The driver's assigned vehicle comes from their trips when the report has no
+  // summary yet and no invoice vehicle was picked.
+  const driverTripsQuery = useDriverTrips({ page: 0, size: 20 });
+  const assignedTrip = getAssignedVehicleTrip(driverTripsQuery.data?.data.content ?? []);
   const vehicleName = getDisplayValue(
-    checklistSummary?.vehicleInfo?.vehicleName ?? selectedVehicle?.name,
+    checklistSummary?.vehicleInfo?.vehicleName ?? selectedVehicle?.name ?? assignedTrip?.vehicleName,
     "Vehicle unavailable",
   );
   const vehicleIdentifier = getDisplayValue(
-    checklistSummary?.vehicleInfo?.vehicleIdentifier ?? selectedVehicle?.identifier,
+    checklistSummary?.vehicleInfo?.vehicleIdentifier ?? selectedVehicle?.identifier ?? assignedTrip?.vehicleIdentifier,
     "Identifier unavailable",
   );
   const hasChecklistSummary = Boolean(checklistSummary);
@@ -78,7 +84,7 @@ export default function ChecklistStep1Page() {
       <VehicleCard
         model={vehicleName}
         plate={vehicleIdentifier}
-        imageUri={selectedVehicle?.imageUrl ?? undefined}
+        imageUri={selectedVehicle?.imageUrl ?? assignedTrip?.primaryVehicleImage ?? undefined}
         statusText={selectedVehicle ? "Selected from booking invoice" : undefined}
       />
     </ChecklistShell>
