@@ -1,4 +1,5 @@
 import type {
+  ChecklistInvoiceVehicle,
   ChecklistTracker,
   DriverTrip,
   PostRideChecklistAggregate,
@@ -9,21 +10,13 @@ import {
   getDriverTripStandardStatus,
   getResolvedDriverTripStatus,
 } from "./driverTrips";
+import { parseLagos, toLagosDate } from "./lagosTime";
 
-const parseDate = (value?: string | null) => {
-  if (!value) {
-    return undefined;
-  }
-
-  const date = new Date(value);
-
-  return Number.isNaN(date.getTime()) ? undefined : date;
-};
+// API times are Lagos wall-clock times, so "today" is the Lagos day.
+const parseDate = (value?: string | null) => parseLagos(value);
 
 const isSameLocalDay = (left: Date, right: Date) =>
-  left.getFullYear() === right.getFullYear() &&
-  left.getMonth() === right.getMonth() &&
-  left.getDate() === right.getDate();
+  toLagosDate(left) === toLagosDate(right);
 
 const getTripDate = (trip: DriverTrip) =>
   parseDate(trip.startDateTime) ??
@@ -145,3 +138,38 @@ export const isPostRidePilotReportSubmitted = (
     aggregate?.postTripSummary.exteriorPhotos.valid &&
       aggregate.postTripSummary.interiorPhotos.valid,
   );
+
+/**
+ * The vehicle to show on the pilot report: the one on today's (or the next
+ * active) trip, else the vehicle on the driver's most recent trip.
+ */
+export const getAssignedVehicleTrip = (trips: DriverTrip[], today = new Date()) =>
+  getAvailablePreRidePilotReportTrip(trips, today) ??
+  [...trips]
+    .filter((trip) => Boolean(trip.vehicleIdentifier?.trim() || trip.vehicleName?.trim()))
+    .sort((left, right) => getTripTime(right) - getTripTime(left))[0];
+
+/**
+ * The driver's vehicle from their trips, shaped like an invoice-lookup vehicle,
+ * for when the lookup returns no assigned vehicle. Needs the trip's vehicle id.
+ */
+export const getTripAssignedVehicle = (
+  trips: DriverTrip[],
+  today = new Date(),
+): ChecklistInvoiceVehicle | undefined => {
+  const trip = getAssignedVehicleTrip(trips, today);
+  const id = trip?.vehicleId?.trim();
+  const name = trip?.vehicleIdentifier?.trim() || trip?.vehicleName?.trim();
+
+  if (!trip || !id || !name) {
+    return undefined;
+  }
+
+  return {
+    id,
+    identifier: trip.vehicleName?.trim() && trip.vehicleName.trim() !== name ? trip.vehicleName.trim() : "From your trips",
+    imageUrl: trip.primaryVehicleImage?.trim() || undefined,
+    name,
+    source: "TRIP",
+  };
+};

@@ -425,7 +425,8 @@ export interface ChecklistInvoiceVehicle {
   imageUrl?: string | null;
   name: string;
   identifier: string;
-  source: "ASSIGNED" | "INVOICE";
+  /** TRIP: the API returned no assigned vehicle, so it is taken from the driver's trips. */
+  source: "ASSIGNED" | "INVOICE" | "TRIP";
 }
 
 export interface ChecklistInvoiceVehicleData {

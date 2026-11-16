@@ -7,11 +7,13 @@ import { RotateCcw } from "lucide-react";
 import { ChecklistSectionTitle, ChecklistShell } from "@/components/checklist/ChecklistShell";
 import {
   AnalysisReviewCard,
+  DashboardAnalysisNotice,
   FeatureChips,
   getInteriorAnalysisMetadata,
   isMetadataValid,
   parseNumericInput,
   ReadingsFields,
+  useDashboardAnalysisStatus,
 } from "@/components/checklist/InteriorStep";
 import { PhotoUploadCard } from "@/components/checklist/PhotoUploadCard";
 import { usePhotoSlots } from "@/hooks/usePhotoSlot";
@@ -96,8 +98,10 @@ export default function ChecklistStep3Page() {
   const fuelLevelInPercentage = parseNumericInput(fuelLevel);
   const hasValidMetadata = isMetadataValid(odometerKM, fuelLevelInPercentage);
   const hasDashboardUploaded = isChecklistPhotoUploaded(slots.photos.dashboard);
-  const isSubmitting =
-    submitInteriorChecklist.isPending || reanalyzeInteriorChecklist.isPending || updateInteriorMetadata.isPending;
+  const isAnalyzing = submitInteriorChecklist.isPending || reanalyzeInteriorChecklist.isPending;
+  const analysis = useDashboardAnalysisStatus(isAnalyzing);
+  // Once the driver chooses manual entry they no longer wait on the AI.
+  const isSubmitting = updateInteriorMetadata.isPending || (isAnalyzing && !analysis.manual);
   const isNextEnabled =
     Boolean(activeTrackerId) &&
     Boolean(checklistSummary) &&
@@ -109,10 +113,19 @@ export default function ChecklistStep3Page() {
   const showAnalysisReview = (metadata: VehicleMetadata | undefined) => {
     if (!metadata) return false;
     setAnalysisMetadata(metadata);
-    setOdometer(typeof metadata.odometerKM === "number" ? String(metadata.odometerKM) : "");
-    setFuelLevel(typeof metadata.fuelLevelInPercentage === "number" ? String(metadata.fuelLevelInPercentage) : "");
+    // Never overwrite what the driver typed after choosing manual entry.
+    if (!analysis.manualRef.current) {
+      setOdometer(typeof metadata.odometerKM === "number" ? String(metadata.odometerKM) : "");
+      setFuelLevel(typeof metadata.fuelLevelInPercentage === "number" ? String(metadata.fuelLevelInPercentage) : "");
+    }
     setAnalysisReviewVisible(true);
+    analysis.clearFailed();
     return true;
+  };
+
+  const enterReadingsManually = () => {
+    analysis.enterManually();
+    setAnalysisReviewVisible(true);
   };
 
   const reanalyzeDashboard = async () => {
@@ -128,6 +141,7 @@ export default function ChecklistStep3Page() {
       await reanalyzeDashboard();
       toast.success("Dashboard reanalyzed", "Review the updated odometer and fuel readings.");
     } catch (error) {
+      analysis.markFailed();
       toast.error("Dashboard analysis failed", getApiErrorMessage(error) ?? "Please try again.");
     }
   };
@@ -147,6 +161,7 @@ export default function ChecklistStep3Page() {
   };
 
   const handleNext = async () => {
+    analysis.clearFailed();
     if (isAnalysisReviewVisible) {
       await confirmAnalysis();
       return;
@@ -163,6 +178,7 @@ export default function ChecklistStep3Page() {
       try {
         await reanalyzeDashboard();
       } catch (error) {
+        analysis.markFailed();
         toast.error("Dashboard analysis failed", getApiErrorMessage(error) ?? "Please try again.");
       }
       return;
@@ -219,6 +235,11 @@ export default function ChecklistStep3Page() {
         );
         return;
       }
+      if (isAnalysisReviewVisible) {
+        toast.error("Interior photos failed", getApiErrorMessage(error) ?? "Please try again.");
+        return;
+      }
+      analysis.markFailed();
       toast.error("Interior photos failed", getApiErrorMessage(error) ?? "Please try again.");
     }
   };
@@ -238,7 +259,7 @@ export default function ChecklistStep3Page() {
       footer={{
         children: checklistSummaryQuery.isError
           ? "Retry progress check"
-          : submitInteriorChecklist.isPending
+          : isAnalyzing && !analysis.manual
             ? "Analyzing dashboard..."
             : isSubmitting
               ? "Saving..."
@@ -268,6 +289,15 @@ export default function ChecklistStep3Page() {
           onRemove={() => void slots.remove(key)}
         />
       ))}
+
+      <DashboardAnalysisNotice
+        analyzing={isAnalyzing}
+        failed={analysis.failed && hasDashboardUploaded}
+        manual={analysis.manual && !analysisMetadata}
+        slow={analysis.slow}
+        onManual={enterReadingsManually}
+        onRetry={() => void handleNext()}
+      />
 
       <ChecklistSectionTitle className="mt-2">Vehicle Readings</ChecklistSectionTitle>
       <ReadingsFields odometer={odometer} fuelLevel={fuelLevel} onOdometerChange={setOdometer} onFuelLevelChange={setFuelLevel} />

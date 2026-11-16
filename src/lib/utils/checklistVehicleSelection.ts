@@ -32,7 +32,7 @@ export const readChecklistVehicleSelection = (
       !vehicle?.id?.trim() ||
       !vehicle.name?.trim() ||
       !vehicle.identifier?.trim() ||
-      (vehicle.source !== "ASSIGNED" && vehicle.source !== "INVOICE")
+      (vehicle.source !== "ASSIGNED" && vehicle.source !== "INVOICE" && vehicle.source !== "TRIP")
     ) {
       return undefined;
     }
