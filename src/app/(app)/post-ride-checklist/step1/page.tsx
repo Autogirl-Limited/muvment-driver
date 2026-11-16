@@ -10,7 +10,7 @@ import { NavBar, Screen } from "@/components/ui/Screen";
 import { usePostRideChecklistAggregate } from "@/lib/api/hooks/usePreRideChecklist";
 import { useDriverTrips } from "@/lib/api/hooks/useTrips";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute, getPostRideUnlockedStep } from "@/lib/utils/checklistNavigation";
-import { getAvailablePreRidePilotReportTrip, getPostRidePilotReportTrip } from "@/lib/utils/pilotReports";
+import { getAssignedVehicleTrip, getPostRidePilotReportTrip } from "@/lib/utils/pilotReports";
 
 const getDisplayValue = (value: string | null | undefined, fallback: string) => value?.trim() || fallback;
 
@@ -23,7 +23,7 @@ export default function PostRideStep1Page() {
   const hasAggregate = Boolean(aggregate);
   const isCheckingProgress = !hasAggregate && aggregateQuery.isFetching;
   const driverTrips = driverTripsQuery.data?.data.content ?? [];
-  const fallbackTrip = getPostRidePilotReportTrip(driverTrips) ?? getAvailablePreRidePilotReportTrip(driverTrips);
+  const fallbackTrip = getPostRidePilotReportTrip(driverTrips) ?? getAssignedVehicleTrip(driverTrips);
   const vehicleName = getDisplayValue(aggregate?.preTripSummary.vehicleInfo?.vehicleName ?? fallbackTrip?.vehicleName, "Vehicle unavailable");
   const vehicleIdentifier = getDisplayValue(
     aggregate?.preTripSummary.vehicleInfo?.vehicleIdentifier ?? fallbackTrip?.vehicleIdentifier,
@@ -60,7 +60,7 @@ export default function PostRideStep1Page() {
       }}
     >
       <ChecklistSectionTitle>Assigned Vehicle</ChecklistSectionTitle>
-      <VehicleCard model={vehicleName} plate={vehicleIdentifier} />
+      <VehicleCard model={vehicleName} plate={vehicleIdentifier} imageUri={fallbackTrip?.primaryVehicleImage ?? undefined} />
     </ChecklistShell>
   );
 }
