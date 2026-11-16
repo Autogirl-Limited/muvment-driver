@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, ReceiptText } from "lucide-react";
 
@@ -9,16 +9,31 @@ import { Button } from "@/components/ui/Button";
 import { NavBar, Screen } from "@/components/ui/Screen";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { useLookupChecklistInvoiceVehicles, useTodayChecklist } from "@/lib/api/hooks/usePreRideChecklist";
+import { useDriverTrips } from "@/lib/api/hooks/useTrips";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import type { ChecklistInvoiceVehicle } from "@/lib/api/types";
 import { getPreRideStarterStepRoute } from "@/lib/utils/checklistNavigation";
 import { writeChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
+import { getTripAssignedVehicle } from "@/lib/utils/pilotReports";
 
 export default function ChecklistInvoicePage() {
   const router = useRouter();
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>();
-  const [vehicles, setVehicles] = useState<ChecklistInvoiceVehicle[]>([]);
+  const [lookedUpVehicles, setVehicles] = useState<ChecklistInvoiceVehicle[]>([]);
+  const driverTripsQuery = useDriverTrips({ page: 0, size: 20 });
+  const driverTripsContent = driverTripsQuery.data?.data.content;
+  // The lookup only returns an assigned vehicle when the driver's profile has
+  // one. Otherwise offer the vehicle from their trips next to the invoice one.
+  const vehicles = useMemo(() => {
+    if (lookedUpVehicles.length === 0 || lookedUpVehicles.some((vehicle) => vehicle.source === "ASSIGNED")) {
+      return lookedUpVehicles;
+    }
+    const tripVehicle = getTripAssignedVehicle(driverTripsContent ?? []);
+    return tripVehicle && !lookedUpVehicles.some((vehicle) => vehicle.id === tripVehicle.id)
+      ? [tripVehicle, ...lookedUpVehicles]
+      : lookedUpVehicles;
+  }, [driverTripsContent, lookedUpVehicles]);
   const currentUserQuery = useCurrentUser();
   const todayChecklistQuery = useTodayChecklist();
   const lookupVehicles = useLookupChecklistInvoiceVehicles();
@@ -134,7 +149,11 @@ export default function ChecklistInvoicePage() {
                       <span className="text-body block font-semibold text-text">{vehicle.name}</span>
                       <span className="text-footnote mt-0.5 block text-text-3">{vehicle.identifier}</span>
                       <span className="text-caption mt-1 block text-text-4">
-                        {vehicle.source === "INVOICE" ? "Vehicle on this booking" : "Primary assigned vehicle"}
+                        {vehicle.source === "INVOICE"
+                          ? "Vehicle on this booking"
+                          : vehicle.source === "TRIP"
+                            ? "Vehicle from your trips"
+                            : "Primary assigned vehicle"}
                       </span>
                     </span>
                   </button>
