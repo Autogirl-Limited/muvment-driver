@@ -23,6 +23,7 @@ import {
   useReanalyzeInteriorChecklist,
   useSubmitInteriorChecklist,
   useUpdateInteriorMetadata,
+  useAssignedVehicle,
   useVehicleFeatures,
 } from "@/lib/api/hooks/usePreRideChecklist";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
@@ -67,11 +68,15 @@ export default function ChecklistStep3Page() {
   const [vehicleSelection, setVehicleSelection] = useState<ChecklistVehicleSelection>();
   const checklistSummaryQuery = usePreRideChecklistSummary(activeTrackerId);
   const checklistSummary = checklistSummaryQuery.data?.data;
+  const assignedVehicleQuery = useAssignedVehicle();
   const selectedVehicleId =
     checklistSummary?.vehicleInfo?.vehicleId ??
     vehicleSelection?.vehicle.id ??
+    assignedVehicleQuery.data?.id ??
     currentUserQuery.data?.data.vehicleId;
-  const vehicleFeaturesQuery = useVehicleFeatures(selectedVehicleId, { enabled: !currentUserQuery.isLoading });
+  const vehicleFeaturesQuery = useVehicleFeatures(selectedVehicleId, {
+    enabled: !currentUserQuery.isLoading && !assignedVehicleQuery.isLoading,
+  });
   const savedMetadata = checklistSummary?.interiorPhotos?.metadata;
   const hasSavedInteriorSubmission = checklistSummary?.interiorPhotos?.valid === true;
   const slots = usePhotoSlots(INTERIOR_KEYS);
@@ -316,8 +321,13 @@ export default function ChecklistStep3Page() {
         </AnalysisReviewCard>
       )}
 
-      {(vehicleFeatures.length > 0 || vehicleFeaturesQuery.isLoading) && (
-        <ChecklistSectionTitle className="mt-2">Vehicle Features</ChecklistSectionTitle>
+      <ChecklistSectionTitle className="mt-2">Vehicle Features</ChecklistSectionTitle>
+      {!vehicleFeaturesQuery.isLoading && vehicleFeatures.length === 0 && (
+        <p className="text-footnote mb-4 text-text-3">
+          {vehicleFeaturesQuery.isError
+            ? "Couldn't load this vehicle's features. Pull to refresh and try again."
+            : "No features are listed for this vehicle."}
+        </p>
       )}
       <FeatureChips
         features={vehicleFeatures}
@@ -328,7 +338,7 @@ export default function ChecklistStep3Page() {
         }
       />
 
-      <ChecklistSectionTitle className="mt-4">Accessories Photo</ChecklistSectionTitle>
+      <ChecklistSectionTitle className="mt-4">Accessories Photo (Optional)</ChecklistSectionTitle>
       <PhotoUploadCard
         title="Accessories"
         subtitle={slots.subtitleFor("accessories", "Photo of available flashy accessories")}
