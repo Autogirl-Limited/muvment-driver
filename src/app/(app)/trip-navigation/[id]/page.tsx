@@ -14,7 +14,7 @@ import { getApiErrorMessage } from "@/lib/api/errors";
 import { useRideActions, useTripWithQueuedRideActions } from "@/lib/api/hooks/useRideTimer";
 import { useDriverTrip } from "@/lib/api/hooks/useTrips";
 import type { DriverTripDetails, DriverTripStatus } from "@/lib/api/types";
-import { computeRideClock, isRidingStatus, useServerNow } from "@/lib/rideTimer/rideClock";
+import { computeRideClock, isRideInProgress, useServerNow } from "@/lib/rideTimer/rideClock";
 import { useEnsureTripTracking } from "@/lib/tracking/useTripTracker";
 import { getPhoneUrl, getWhatsAppUrl, openExternalUrl } from "@/lib/utils/deviceActions";
 import { getDriverTripStatusLabel, getResolvedDriverTripDetailsStatus } from "@/lib/utils/driverTrips";
@@ -33,8 +33,16 @@ const TripNavigationView = dynamic(
 
 const compact = (value?: string | null) => value?.trim() || undefined;
 
-const getNavigationMode = ({ mode, status }: { mode?: string | null; status?: DriverTripStatus | null }): TripNavigationMode =>
-  mode === "dropoff" || status === "ONGOING" || status === "EXTRA_TIME" ? "dropoff" : "pickup";
+const getNavigationMode = ({
+  mode,
+  rideStarted,
+  status,
+}: {
+  mode?: string | null;
+  rideStarted: boolean;
+  status?: DriverTripStatus | null;
+}): TripNavigationMode =>
+  mode === "dropoff" || rideStarted || status === "ONGOING" || status === "EXTRA_TIME" ? "dropoff" : "pickup";
 
 const getTripStatusLabel = (mode: TripNavigationMode, tripDetails?: DriverTripDetails) => {
   const resolvedStatus = getResolvedDriverTripDetailsStatus(tripDetails);
@@ -66,9 +74,11 @@ export default function TripNavigationPage() {
   const { details: tripDetails } = useTripWithQueuedRideActions(tripId, driverTripQuery.data?.data);
   const resolvedTripStatus = getResolvedDriverTripDetailsStatus(tripDetails);
   useEnsureTripTracking(tripId, resolvedTripStatus);
-  const navigationMode = getNavigationMode({ mode: requestedMode, status: resolvedTripStatus });
   const rideTimer = tripDetails?.rideTimer;
-  const isRiding = isRidingStatus(resolvedTripStatus) && Boolean(rideTimer?.actualStartAt) && !rideTimer?.actualEndAt;
+  // The ride timer is the source of truth: the server may not move the trip
+  // status to ONGOING the moment the ride is started.
+  const isRiding = isRideInProgress(rideTimer) && resolvedTripStatus !== "COMPLETE" && resolvedTripStatus !== "CANCELLED";
+  const navigationMode = getNavigationMode({ mode: requestedMode, rideStarted: isRiding, status: resolvedTripStatus });
   const nowMs = useServerNow({
     active: isRiding,
     receivedAt: driverTripQuery.dataUpdatedAt,
@@ -227,6 +237,7 @@ export default function TripNavigationPage() {
         primaryActionLoading={rideActions.pendingAction === "start" || rideActions.pendingAction === "end"}
         statusLabel={getTripStatusLabel(navigationMode, tripDetails)}
         timerSlot={timerSlot}
+        tripId={tripId}
       />
 
       <PauseReasonSheet

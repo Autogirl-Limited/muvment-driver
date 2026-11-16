@@ -18,6 +18,9 @@ export const RIDING_STATUSES: readonly DriverTripStatus[] = ["ONGOING", "EXTRA_T
 export const isPreRideStatus = (status?: DriverTripStatus | null) => !!status && PRE_RIDE_STATUSES.includes(status);
 export const isRidingStatus = (status?: DriverTripStatus | null) => !!status && RIDING_STATUSES.includes(status);
 
+/** The ride has been started and not ended, whatever the trip status says. */
+export const isRideInProgress = (timer?: RideTimer | null) => Boolean(timer?.actualStartAt) && !timer?.actualEndAt;
+
 /** Seconds of the "Ride starting in 3, 2, 1" countdown before an auto-start. */
 export const AUTO_START_COUNTDOWN_SECONDS = 3;
 
