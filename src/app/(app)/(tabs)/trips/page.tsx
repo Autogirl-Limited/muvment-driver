@@ -22,7 +22,9 @@ import {
   groupDriverTripsForCards,
   isDriverTripActive,
   isDriverTripUpcoming,
+  type DriverTripSortOrder,
 } from "@/lib/utils/driverTrips";
+import { toLagosDate } from "@/lib/utils/lagosTime";
 
 const TRIPS_PAGE_SIZE = 50;
 
@@ -39,10 +41,11 @@ const STANDARD_TRIP_STATUS_BY_TAB: Partial<Record<TripFilter, StandardTripStatus
   Upcoming: "UPCOMING",
 };
 
-const addDays = (date: Date, days: number) => {
-  const nextDate = new Date(date);
-  nextDate.setDate(nextDate.getDate() + days);
-  return nextDate;
+// Relative ranges use the Lagos calendar day, the same clock the API uses.
+const addDaysToApiDate = (apiDate: string, days: number) => {
+  const [year, month, day] = apiDate.split("-").map(Number);
+
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
 };
 
 const getDateRangeParams = (dateFilter: DateFilter, customDate: Date | null) => {
@@ -54,24 +57,23 @@ const getDateRangeParams = (dateFilter: DateFilter, customDate: Date | null) => 
     return {};
   }
 
-  const today = new Date();
+  const today = toLagosDate(new Date());
 
   if (dateFilter === "Today") {
-    const selectedDate = formatApiDate(today);
-    return { endDate: selectedDate, startDate: selectedDate };
+    return { endDate: today, startDate: today };
   }
   if (dateFilter === "Yesterday") {
-    const selectedDate = formatApiDate(addDays(today, -1));
-    return { endDate: selectedDate, startDate: selectedDate };
+    const yesterday = addDaysToApiDate(today, -1);
+    return { endDate: yesterday, startDate: yesterday };
   }
   if (dateFilter === "Last 7 days") {
-    return { endDate: formatApiDate(today), startDate: formatApiDate(addDays(today, -6)) };
+    return { endDate: today, startDate: addDaysToApiDate(today, -6) };
   }
 
-  const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  const firstDayOfMonth = `${today.slice(0, 7)}-01`;
+  const lastDayOfMonth = addDaysToApiDate(`${addDaysToApiDate(firstDayOfMonth, 31).slice(0, 7)}-01`, -1);
 
-  return { endDate: formatApiDate(lastDayOfMonth), startDate: formatApiDate(firstDayOfMonth) };
+  return { endDate: lastDayOfMonth, startDate: firstDayOfMonth };
 };
 
 const matchesActiveTab = (trip: DriverTrip, activeTab: TripFilter) => {
@@ -145,9 +147,13 @@ export default function TripsPage() {
           : activeTab === "Cancelled"
             ? "CANCELLED"
             : undefined;
+  // Upcoming and ongoing read as an itinerary (next trip first); everything
+  // else shows the most recent trips first.
+  const sortOrder: DriverTripSortOrder =
+    activeTab === "Upcoming" || activeTab === "Ongoing" ? "soonest-first" : "latest-first";
   const visibleSections = useMemo(
-    () => groupDriverTripsForCards(visibleTrips, fallbackStatus),
-    [fallbackStatus, visibleTrips],
+    () => groupDriverTripsForCards(visibleTrips, fallbackStatus, sortOrder),
+    [fallbackStatus, sortOrder, visibleTrips],
   );
 
   const isSearching = searchQuery.trim().length > 0;

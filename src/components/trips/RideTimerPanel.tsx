@@ -12,6 +12,7 @@ import {
   AUTO_START_COUNTDOWN_SECONDS,
   computeRideClock,
   isPreRideStatus,
+  isRideInProgress,
   isRidingStatus,
   type RideClock,
 } from "@/lib/rideTimer/rideClock";
@@ -276,7 +277,7 @@ export const RideTimerPanel = ({
   const clock = computeRideClock(timer, nowMs);
   const [isPauseSheetOpen, setPauseSheetOpen] = useState(false);
   const [isEndConfirmOpen, setEndConfirmOpen] = useState(false);
-  const riding = isRidingStatus(status) && clock.phase !== "ENDED";
+  const riding = (isRidingStatus(status) || isRideInProgress(timer)) && clock.phase !== "ENDED";
   const canStart = isPreRideStatus(status) && clock.phase === "NOT_STARTED";
 
   if (status === "CANCELLED") {
