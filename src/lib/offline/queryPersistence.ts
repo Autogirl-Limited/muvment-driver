@@ -3,6 +3,8 @@ import type { Query, QueryClient } from "@tanstack/react-query";
 import type { PersistQueryClientProviderProps } from "@tanstack/react-query-persist-client";
 import { del, get, set } from "idb-keyval";
 
+import { clearChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
+
 /**
  * Keeps the app's last loaded data on the phone (IndexedDB), so every screen
  * still shows what the driver last saw when they open the app with no signal.
@@ -75,6 +77,8 @@ export const persistOptions: PersistQueryClientProviderProps["persistOptions"] =
 
 /** Forgets everything saved and in memory (sign-out: the next driver on this phone must not see it). */
 export const clearOfflineCache = async (queryClient: QueryClient) => {
+  // The picked invoice vehicle belongs to the driver who signed in: don't leave it for the next one.
+  clearChecklistVehicleSelection();
   queryClient.clear();
   await persister.removeClient();
 };
