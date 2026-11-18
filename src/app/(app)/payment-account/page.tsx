@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { BadgeCheck, Check, ChevronDown, Landmark, Mail, Search, Smartphone, X, XCircle } from "lucide-react";
 
+import { BankCardPreview } from "@/components/payments/BankCardPreview";
+import { BankLogo } from "@/components/payments/BankLogo";
+import { POPULAR_BANK_KEYS, POPULAR_BANK_LABELS, bankLogoKey } from "@/lib/payments/bankLogos";
 import { Pill } from "@/components/ui/Badge";
 import { BackButton } from "@/components/ui/BackButton";
 import { Button } from "@/components/ui/Button";
@@ -33,9 +36,7 @@ type Step = "view" | "details" | "otp";
 const AccountCard = ({ account }: { account: DriverBankAccount }) => (
   <div className="card p-4">
     <div className="flex items-start gap-3">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent">
-        <Landmark size={20} />
-      </span>
+      <BankLogo bankName={account.bankName} bankCode={account.bankCode} size={40} />
       <div className="min-w-0 flex-1">
         <p className="text-body font-semibold text-text">{account.bankName}</p>
         <p className="text-callout tabular-nums text-text-2">{account.accountNumberMasked}</p>
@@ -104,7 +105,10 @@ const BankPickerSheet = ({
               onClick={() => onSelect(bank)}
               className="pressable-row flex w-full items-center justify-between px-4 py-3 text-left"
             >
-              <span className="text-body text-text">{bank.name}</span>
+              <span className="flex min-w-0 items-center gap-3">
+                <BankLogo bankName={bank.name} bankCode={bank.code} size={32} />
+                <span className="text-body truncate text-text">{bank.name}</span>
+              </span>
               {bank.code === selectedCode && <Check size={18} className="text-accent" />}
             </button>
           ))
@@ -126,6 +130,14 @@ export default function PaymentAccountPage() {
   const [otp, setOtp] = useState("");
   const [otpDestination, setOtpDestination] = useState<string | null>(null);
   const [resendIn, setResendIn] = useState(0);
+  const banksForShortcuts = useBanks(step === "details");
+  const popularBanks = useMemo(() => {
+    const list = banksForShortcuts.data?.data ?? [];
+
+    return POPULAR_BANK_KEYS.map((key) => list.find((entry) => bankLogoKey(entry.name, entry.code) === key)).filter(
+      (entry): entry is Bank => Boolean(entry),
+    );
+  }, [banksForShortcuts.data]);
   const resolveQuery = useResolveBankAccount({ accountNumber, bankCode: bank?.code });
   const requestOtp = useRequestBankOtp();
   const saveAccount = useSaveBankAccount();
@@ -253,6 +265,28 @@ export default function PaymentAccountPage() {
 
         {step === "details" && (
           <>
+            <BankCardPreview bankName={bank?.name} bankCode={bank?.code} accountNumber={accountNumber} accountName={resolved?.matches ? resolved.accountName : undefined} verified={Boolean(resolved?.matches)} />
+            {popularBanks.length > 0 && (
+              <>
+                <p className="text-callout mb-2 font-medium text-text">Popular banks</p>
+                <div className="-mx-5 mb-5 flex gap-2.5 overflow-x-auto px-5 pb-1" style={{ scrollbarWidth: "none" }}>
+                  {popularBanks.map((entry) => (
+                    <button
+                      key={entry.code}
+                      type="button"
+                      onClick={() => setBank(entry)}
+                      aria-pressed={bank?.code === entry.code}
+                      className={`pressable flex w-[76px] shrink-0 flex-col items-center gap-1.5 rounded-2xl border px-1 py-2.5 ${
+                        bank?.code === entry.code ? "border-accent bg-accent-soft" : "border-border bg-surface"
+                      }`}
+                    >
+                      <BankLogo bankName={entry.name} bankCode={entry.code} size={40} />
+                      <span className="w-full truncate text-center text-[12px] text-text-2">{POPULAR_BANK_LABELS[bankLogoKey(entry.name, entry.code) ?? "opay"] ?? entry.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
             <p className="text-callout mb-2 font-medium text-text">Bank</p>
             <button
               type="button"
@@ -318,13 +352,7 @@ export default function PaymentAccountPage() {
 
         {step === "otp" && bank && (
           <>
-            <div className="card mb-6 p-4">
-              <p className="text-caption text-text-3">New account</p>
-              <p className="text-body font-semibold text-text">{resolved?.accountName}</p>
-              <p className="text-footnote text-text-3">
-                {bank.name} · {accountNumber}
-              </p>
-            </div>
+            <BankCardPreview bankName={bank.name} bankCode={bank.code} accountNumber={accountNumber} accountName={resolved?.accountName} verified />
 
             <p className="text-headline text-text">Confirm it&apos;s you</p>
             <p className="text-footnote mt-1 mb-4 text-text-3">We&apos;ll send a one-time code to confirm this change.</p>

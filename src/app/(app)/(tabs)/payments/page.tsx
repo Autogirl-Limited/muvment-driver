@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CalendarDays, CheckCircle2, Plus, SlidersHorizontal, X } from "lucide-react";
 
+import { PaymentsCheckFailed, PaymentsChecking, PaymentsLocked, usePaymentsAccess } from "@/components/payments/PaymentsGate";
 import { DashboardHeader } from "@/components/layout/DashboardHeader";
 import {
   NoBankAccountBanner,
@@ -22,7 +23,6 @@ import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import {
   openPayoutReceipt,
-  useDriverPaymentSummary,
   useDriverPayouts,
   usePaymentRequests,
 } from "@/lib/api/hooks/useDriverPayments";
@@ -194,7 +194,7 @@ export default function PaymentsPage() {
   const [isFilterOpen, setFilterOpen] = useState(false);
   const [receiptLoadingId, setReceiptLoadingId] = useState<string | null>(null);
 
-  const summaryQuery = useDriverPaymentSummary();
+  const { access, summaryQuery } = usePaymentsAccess();
   const requestsQuery = usePaymentRequests({ ...filters, page: 0, size: requestsSize });
   const payoutsQuery = useDriverPayouts({ page: 0, size: payoutsSize, enabled: segment === "payouts" });
   const summary = summaryQuery.data?.data;
@@ -240,6 +240,24 @@ export default function PaymentsPage() {
       setReceiptLoadingId(null);
     }
   };
+
+  // The page is never drawn on a guess: wait for the summary to say whether a
+  // bank account is on file, and lock Payments when there isn't one.
+  if (access !== "open") {
+    return (
+      <Screen withTabBar {...pull.bind}>
+        {pull.indicator}
+        <DashboardHeader title="Payments" />
+        {access === "checking" ? (
+          <PaymentsChecking />
+        ) : access === "failed" ? (
+          <PaymentsCheckFailed onRetry={() => void summaryQuery.refetch()} retrying={summaryQuery.isFetching} />
+        ) : (
+          <PaymentsLocked />
+        )}
+      </Screen>
+    );
+  }
 
   return (
     <Screen withTabBar {...pull.bind}>

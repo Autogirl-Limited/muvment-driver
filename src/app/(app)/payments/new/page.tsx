@@ -1,5 +1,6 @@
 "use client";
 
+import { PaymentsCheckFailed, PaymentsChecking, PaymentsLocked, usePaymentsAccess } from "@/components/payments/PaymentsGate";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Check, Search, X } from "lucide-react";
@@ -13,7 +14,6 @@ import { NavBar, Screen } from "@/components/ui/Screen";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import {
   useDriverPaymentRates,
-  useDriverPaymentSummary,
   useEligibleTrips,
   useSubmitPaymentRequest,
 } from "@/lib/api/hooks/useDriverPayments";
@@ -55,7 +55,7 @@ export default function NewPaymentRequestPage() {
   const [selectedTrips, setSelectedTrips] = useState<EligibleTrip[]>([]);
   const [created, setCreated] = useState<DriverPaymentRequest[]>([]);
   const ratesQuery = useDriverPaymentRates();
-  const summaryQuery = useDriverPaymentSummary();
+  const { access, summaryQuery } = usePaymentsAccess();
   const submit = useSubmitPaymentRequest();
   const rates = ratesQuery.data?.data;
   // One key per distinct submission: a double tap or a retry of the same
@@ -174,6 +174,21 @@ export default function NewPaymentRequestPage() {
             {created.length === 1 ? "View request" : "View requests"}
           </Button>
         </div>
+      </Screen>
+    );
+  }
+
+  if (access !== "open") {
+    return (
+      <Screen>
+        <NavBar left={<BackButton />} title="Request Payment" />
+        {access === "checking" ? (
+          <PaymentsChecking />
+        ) : access === "failed" ? (
+          <PaymentsCheckFailed onRetry={() => void summaryQuery.refetch()} retrying={summaryQuery.isFetching} />
+        ) : (
+          <PaymentsLocked />
+        )}
       </Screen>
     );
   }
