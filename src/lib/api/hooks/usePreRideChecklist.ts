@@ -19,6 +19,8 @@ import type {
   DriverTripDetailsResponse,
   DriverTripStatus,
   PreRideChecklistSummary,
+  SubmittedChecklistPhotos,
+  SubmittedChecklistPhotosResponse,
   PostRideChecklistAggregateResponse,
   PreRideChecklistSummaryResponse,
   SubmitDriverPhotoChecklistPayload,
@@ -795,4 +797,32 @@ export const useAssignedVehicle = () =>
     staleTime: 0,
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
+  });
+
+export const SUBMITTED_CHECKLIST_PHOTOS_QUERY_KEY = ["submitted-checklist-photos"] as const;
+
+/**
+ * The photos and readings the driver already submitted for this report, to
+ * show a submitted step again when this phone has no copy of its own (another
+ * phone, a reinstall). Resolves to null if the server can't say.
+ */
+export const useSubmittedChecklistPhotos = (
+  trackerId?: string,
+  options: { enabled?: boolean } = {},
+) =>
+  useQuery<SubmittedChecklistPhotos | null, Error>({
+    queryKey: [...SUBMITTED_CHECKLIST_PHOTOS_QUERY_KEY, trackerId],
+    queryFn: async () => {
+      try {
+        const response = await apiFetchClient.get<SubmittedChecklistPhotosResponse>(
+          buildChecklistPath(trackerId ?? "", "photos"),
+        );
+        return response.data.data ?? null;
+      } catch {
+        // An older server without this endpoint: the summary is all there is.
+        return null;
+      }
+    },
+    enabled: Boolean(trackerId) && (options.enabled ?? true),
+    staleTime: 60_000,
   });

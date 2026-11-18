@@ -17,7 +17,11 @@ interface ChecklistShellProps {
   children: ReactNode;
   footer: ButtonProps;
   backHref?: string;
+  /** Names under the step circles. Defaults to the pre-ride parts. */
+  stepLabels?: string[];
 }
+
+const PRE_RIDE_LABELS = ["Vehicle", "Exterior", "Interior", "Health"];
 
 /** Common frame for every checklist step: back, step dots, title, warning banner, sticky footer. */
 export const ChecklistShell = ({
@@ -29,12 +33,21 @@ export const ChecklistShell = ({
   children,
   footer,
   backHref = "/home",
+  stepLabels,
 }: ChecklistShellProps) => (
   <Screen>
     <NavBar left={<BackButton href={backHref} />} />
     <div className="px-5">
-      <StepIndicator currentStep={currentStep} totalSteps={totalSteps} onStepPress={onStepPress} />
-      <h1 className="text-title-2 mb-4 text-text">{title}</h1>
+      <StepIndicator
+        currentStep={currentStep}
+        totalSteps={totalSteps}
+        onStepPress={onStepPress}
+        labels={stepLabels ?? (totalSteps === PRE_RIDE_LABELS.length ? PRE_RIDE_LABELS : undefined)}
+      />
+      <p className="text-eyebrow mt-2 text-accent-text">
+        Step {currentStep} of {totalSteps}
+      </p>
+      <h1 className="text-title-2 mb-4 mt-0.5 text-text">{title}</h1>
     </div>
     {banner && <Banner>{banner}</Banner>}
     <div className="anim-fade-in flex-1 px-5 pb-6">{children}</div>

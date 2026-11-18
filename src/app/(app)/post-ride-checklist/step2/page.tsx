@@ -1,21 +1,23 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { ChecklistSectionTitle, ChecklistShell } from "@/components/checklist/ChecklistShell";
+import { PhotoInsightNote, SidePhotoCheck } from "@/components/checklist/AiPhotoNotes";
+import { PhotoStepper, toShotTileState, type PhotoStep } from "@/components/checklist/PhotoStepper";
 import { PhotoUploadCard } from "@/components/checklist/PhotoUploadCard";
 import { BackButton } from "@/components/ui/BackButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { NavBar, Screen } from "@/components/ui/Screen";
-import { usePhotoList, usePhotoSlots } from "@/hooks/usePhotoSlot";
+import { clearPhotoDraft, usePhotoList, usePhotoSlots } from "@/hooks/usePhotoSlot";
 import { getApiErrorMessage, isChecklistStepConflictError } from "@/lib/api/errors";
 import {
   usePostRideChecklistAggregate,
   useSubmitExteriorChecklist,
   useTodayChecklist,
 } from "@/lib/api/hooks/usePreRideChecklist";
-import type { ExteriorUploadImage } from "@/lib/api/types";
+import type { ExteriorSide, ExteriorUploadImage } from "@/lib/api/types";
 import { POST_RIDE_DAMAGE_CONFIG, POST_RIDE_EXTERIOR_PHOTOS } from "@/lib/data/tripTimeline";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute, getPostRideGuardedStep } from "@/lib/utils/checklistNavigation";
 import { isChecklistPhotoUploaded, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
@@ -42,8 +44,23 @@ export default function PostRideStep2Page() {
   const aggregate = aggregateQuery.data?.data;
   const hasSavedExteriorChecklist = aggregate?.postTripSummary?.exteriorPhotos?.valid === true;
   const idempotencyKey = usePersistentIdempotencyKey(`post-trip-exterior-${activeTrackerId}`);
-  const required = usePhotoSlots(REQUIRED_KEYS);
-  const damage = usePhotoList(POST_RIDE_DAMAGE_CONFIG.maxPhotos);
+  const [current, setCurrent] = useState(0);
+  const required = usePhotoSlots(REQUIRED_KEYS, activeTrackerId ? `post-exterior:${activeTrackerId}` : undefined);
+  const damage = usePhotoList(POST_RIDE_DAMAGE_CONFIG.maxPhotos, activeTrackerId ? `post-exterior-damage:${activeTrackerId}` : undefined);
+  const photoSteps: PhotoStep[] = [
+    ...POST_RIDE_EXTERIOR_PHOTOS.map((photo) => ({
+      key: photo.id,
+      label: photo.title.replace(" Side", ""),
+      state: toShotTileState(required.photos[photo.id].status, hasSavedExteriorChecklist),
+    })),
+    {
+      key: "damage",
+      label: "Damage",
+      optional: true,
+      state: damage.photos.some(isChecklistPhotoUploaded) ? ("uploaded" as const) : damage.hasFailedUpload ? ("failed" as const) : ("empty" as const),
+    },
+  ];
+  const isDamageStep = current === photoSteps.length - 1;
 
   useEffect(() => {
     if (!activeTrackerId || aggregateQuery.isFetching || !aggregate) return;
@@ -102,6 +119,8 @@ export default function PostRideStep2Page() {
         },
         trackerId: activeTrackerId,
       });
+      clearPhotoDraft(`post-exterior:${activeTrackerId}`);
+      clearPhotoDraft(`post-exterior-damage:${activeTrackerId}`);
       router.push(getChecklistStepRoute("postRide", activeTrackerId, 3));
     } catch (error) {
       if (isChecklistStepConflictError(error)) {
@@ -127,16 +146,29 @@ export default function PostRideStep2Page() {
   return (
     <ChecklistShell
       currentStep={2}
+      stepLabels={["Vehicle", "Exterior", "Interior", "Submit"]}
       title="Exterior Photos"
       banner="Capture every side clearly before continuing to the interior inspection."
       onStepPress={(step) =>
         router.replace(getGuardedChecklistStepRoute({ aggregate, flow: "postRide", requestedStep: step, trackerId: activeTrackerId }))
       }
       footer={{
-        children: aggregateQuery.isError ? "Retry progress check" : submitExteriorChecklist.isPending ? "Saving exterior..." : "Next",
-        loading: submitExteriorChecklist.isPending,
-        disabled: !isNextEnabled && !aggregateQuery.isError,
+        children: isDamageStep
+          ? aggregateQuery.isError
+            ? "Retry progress check"
+            : submitExteriorChecklist.isPending
+              ? "Saving exterior..."
+              : "Next"
+          : photoSteps[current].state === "uploading"
+            ? "Uploading..."
+            : "Next Photo",
+        loading: isDamageStep ? submitExteriorChecklist.isPending : photoSteps[current].state === "uploading",
+        disabled: isDamageStep ? !isNextEnabled && !aggregateQuery.isError : !["uploaded", "saved"].includes(photoSteps[current].state),
         onClick: () => {
+          if (!isDamageStep) {
+            setCurrent((value) => Math.min(value + 1, photoSteps.length - 1));
+            return;
+          }
           if (aggregateQuery.isError) {
             void aggregateQuery.refetch();
             return;
@@ -145,41 +177,68 @@ export default function PostRideStep2Page() {
         },
       }}
     >
-      {POST_RIDE_EXTERIOR_PHOTOS.map((photo) => (
-        <PhotoUploadCard
-          key={photo.id}
-          title={photo.title}
-          subtitle={required.subtitleFor(photo.id, photo.subtitle)}
-          imageUri={required.photos[photo.id].localUri}
-          uploading={required.photos[photo.id].status === "uploading"}
-          failed={required.photos[photo.id].status === "failed"}
-          onClick={() =>
-            void required.capture({ key: photo.id, label: `post-exterior-${REQUIRED_IMAGE_TYPES[photo.id]}`, entityId: activeTrackerId })
-          }
-          onRemove={() => void required.remove(photo.id)}
-        />
-      ))}
+      <PhotoStepper steps={photoSteps} current={current} onSelect={setCurrent} />
 
-      <ChecklistSectionTitle className="mt-4">Damage Photos (Optional, Up to {POST_RIDE_DAMAGE_CONFIG.maxPhotos})</ChecklistSectionTitle>
-      {damage.photos.map((photo, index) => (
-        <PhotoUploadCard
-          key={`damage-${index}`}
-          title={POST_RIDE_DAMAGE_CONFIG.title}
-          subtitle={damage.subtitleFor(photo, POST_RIDE_DAMAGE_CONFIG.subtitle)}
-          imageUri={photo.localUri}
-          uploading={photo.status === "uploading"}
-          failed={photo.status === "failed"}
-          onClick={() => void damage.retake(index, "post-exterior-damage", activeTrackerId)}
-          onRemove={() => void damage.remove(index)}
-        />
-      ))}
-      {damage.photos.length < POST_RIDE_DAMAGE_CONFIG.maxPhotos && (
-        <PhotoUploadCard
-          title={POST_RIDE_DAMAGE_CONFIG.title}
-          subtitle={POST_RIDE_DAMAGE_CONFIG.subtitle}
-          onClick={() => void damage.add("post-exterior-damage", activeTrackerId)}
-        />
-      )}
+      <div key={photoSteps[current].key} className="anim-fade-in mt-5">
+        {isDamageStep ? (
+          <>
+            <ChecklistSectionTitle>Damage Photos (Optional, Up to {POST_RIDE_DAMAGE_CONFIG.maxPhotos})</ChecklistSectionTitle>
+            {damage.photos.map((photo, index) => (
+              <PhotoUploadCard
+                key={`damage-${index}`}
+                title={POST_RIDE_DAMAGE_CONFIG.title}
+                subtitle={damage.subtitleFor(photo, POST_RIDE_DAMAGE_CONFIG.subtitle)}
+                imageUri={photo.localUri}
+                uploading={photo.status === "uploading"}
+                failed={photo.status === "failed"}
+                onClick={() => void damage.retake(index, "post-exterior-damage", activeTrackerId)}
+                onRemove={() => void damage.remove(index)}
+                footer={<PhotoInsightNote imageUrl={photo.fileUrl} kind="DAMAGE" label="Damage close-up" checklistType="POST_TRIP" trackerId={activeTrackerId} />}
+              />
+            ))}
+            {damage.photos.length < POST_RIDE_DAMAGE_CONFIG.maxPhotos && (
+              <PhotoUploadCard
+                title={POST_RIDE_DAMAGE_CONFIG.title}
+                subtitle={POST_RIDE_DAMAGE_CONFIG.subtitle}
+                onClick={() => void damage.add("post-exterior-damage", activeTrackerId)}
+              />
+            )}
+            <p className="text-footnote mt-1 text-text-3">No new damage? Tap Next to continue.</p>
+          </>
+        ) : (
+          (() => {
+            const photo = POST_RIDE_EXTERIOR_PHOTOS[current];
+
+            return (
+              <>
+                <ChecklistSectionTitle>{photo.title}</ChecklistSectionTitle>
+                <PhotoUploadCard
+                  title={photo.title}
+                  subtitle={required.subtitleFor(photo.id, photo.subtitle)}
+                  imageUri={required.photos[photo.id].localUri}
+                  uploading={required.photos[photo.id].status === "uploading"}
+                  failed={required.photos[photo.id].status === "failed"}
+                  onClick={() =>
+                    void required.capture({ key: photo.id, label: `post-exterior-${REQUIRED_IMAGE_TYPES[photo.id]}`, entityId: activeTrackerId })
+                  }
+                  onRemove={() => void required.remove(photo.id)}
+                  footer={
+                    <SidePhotoCheck
+                      imageUrl={required.photos[photo.id].fileUrl}
+                      side={REQUIRED_IMAGE_TYPES[photo.id] as ExteriorSide}
+                      checklistType="POST_TRIP"
+                      trackerId={activeTrackerId}
+                    />
+                  }
+                />
+                {hasSavedExteriorChecklist && !required.photos[photo.id].localUri && (
+                  <p className="text-footnote mt-1 text-text-3">Already saved. Tap Next Photo to carry on, or take it again.</p>
+                )}
+              </>
+            );
+          })()
+        )}
+      </div>
     </ChecklistShell>
   );
 }

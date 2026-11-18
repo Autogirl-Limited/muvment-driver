@@ -77,7 +77,7 @@ export default function PostRideStep3Page() {
   const [isAnalysisReviewVisible, setAnalysisReviewVisible] = useState(false);
   const [odometer, setOdometer] = useState("");
   const [fuelLevel, setFuelLevel] = useState("");
-  const vehicleFeatures = vehicleFeaturesQuery.data?.data ?? [];
+  const vehicleFeatures = (vehicleFeaturesQuery.data?.data ?? []).filter((feature) => feature.category !== "SAFETY_EQUIPMENT");
 
   useEffect(() => {
     if (!activeTrackerId || aggregateQuery.isFetching || !aggregate) return;
@@ -222,6 +222,7 @@ export default function PostRideStep3Page() {
   return (
     <ChecklistShell
       currentStep={3}
+      stepLabels={["Vehicle", "Exterior", "Interior", "Submit"]}
       title="Interior Photos"
       banner="Capture the dashboard clearly. We will analyze the odometer and fuel readings before submission."
       onStepPress={(step) =>
@@ -302,7 +303,7 @@ export default function PostRideStep3Page() {
       />
 
       {isAnalysisReviewVisible && analysisMetadata && (
-        <AnalysisReviewCard metadata={analysisMetadata}>
+        <AnalysisReviewCard metadata={analysisMetadata} trackerId={activeTrackerId || undefined} checklistType="POST_TRIP">
           <ReadingsFields odometer={odometer} fuelLevel={fuelLevel} onOdometerChange={setOdometer} onFuelLevelChange={setFuelLevel} />
         </AnalysisReviewCard>
       )}
