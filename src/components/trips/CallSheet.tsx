@@ -2,6 +2,7 @@
 
 import { Phone } from "lucide-react";
 
+import { Button } from "@/components/ui/Button";
 import { Sheet } from "@/components/ui/Dialog";
 import { getPhoneUrl, getWhatsAppUrl } from "@/lib/utils/deviceActions";
 
@@ -15,49 +16,80 @@ interface CallSheetProps {
   open: boolean;
   onClose: () => void;
   phoneNumber?: string | null;
+  /** The client's name, for the card's header. */
+  name?: string | null;
 }
 
-export const CallSheet = ({ open, onClose, phoneNumber }: CallSheetProps) => {
+const initialsOf = (name?: string | null) =>
+  (name ?? "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+
+/** A large rounded action, like the Call / Message buttons on an iOS contact card. */
+const ContactAction = ({
+  label,
+  color,
+  icon,
+  href,
+  external,
+  onDone,
+}: {
+  label: string;
+  color: string;
+  icon: React.ReactNode;
+  href?: string | null;
+  external?: boolean;
+  onDone: () => void;
+}) => (
+  <a
+    href={href ?? "#"}
+    {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+    aria-disabled={!href}
+    onClick={(event) => {
+      if (!href) {
+        event.preventDefault();
+        return;
+      }
+      onDone();
+    }}
+    className={`pressable flex flex-1 flex-col items-center rounded-2xl bg-fill py-4 ${href ? "" : "opacity-40"}`}
+  >
+    <span className="flex h-[52px] w-[52px] items-center justify-center rounded-full text-white" style={{ backgroundColor: color }}>
+      {icon}
+    </span>
+    <span className="mt-2.5 text-[15px] font-semibold text-text">{label}</span>
+  </a>
+);
+
+/**
+ * Contact the client: a card with their name and number, and two clear
+ * actions, a phone call or WhatsApp. Laid out like an iOS contact card.
+ */
+export const CallSheet = ({ open, onClose, phoneNumber, name }: CallSheetProps) => {
   const phoneUrl = getPhoneUrl(phoneNumber);
   const whatsappUrl = getWhatsAppUrl(phoneNumber);
+  const initials = initialsOf(name);
 
   return (
-    <Sheet open={open} onClose={onClose} title="Select a call option to continue">
-      <div className="flex justify-center gap-14 pb-2">
-        <a
-          href={phoneUrl ?? "#"}
-          onClick={(event) => {
-            if (!phoneUrl) {
-              event.preventDefault();
-              return;
-            }
-            onClose();
-          }}
-          className={`pressable flex flex-col items-center ${phoneUrl ? "" : "opacity-40"}`}
-        >
-          <span className="flex h-[62px] w-[62px] items-center justify-center rounded-2xl bg-navy-mid text-white shadow-float">
-            <Phone size={30} fill="currentColor" />
-          </span>
-          <span className="text-footnote mt-3 text-text-3">Normal Call</span>
-        </a>
-        <a
-          href={whatsappUrl ?? "#"}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(event) => {
-            if (!whatsappUrl) {
-              event.preventDefault();
-              return;
-            }
-            onClose();
-          }}
-          className={`pressable flex flex-col items-center ${whatsappUrl ? "" : "opacity-40"}`}
-        >
-          <span className="flex h-[62px] w-[62px] items-center justify-center rounded-2xl border border-border bg-surface text-[#25D366] shadow-float">
-            <WhatsAppIcon size={34} />
-          </span>
-          <span className="text-footnote mt-3 text-text-3">WhatsApp Call</span>
-        </a>
+    <Sheet open={open} onClose={onClose} title="Contact client">
+      <div className="flex flex-col items-center pb-4">
+        <span className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-gradient-to-br from-[#5A9EFF] to-[#0673FF] text-[26px] font-semibold text-white">
+          {initials || <Phone size={30} />}
+        </span>
+        {name && <p className="mt-3 text-[20px] font-semibold text-text">{name}</p>}
+        <p className="mt-0.5 text-[15px] tabular-nums text-text-3">{phoneNumber?.trim() || "No number"}</p>
+      </div>
+      <div className="flex gap-3">
+        <ContactAction label="Call" color="#34C759" icon={<Phone size={24} fill="currentColor" />} href={phoneUrl} onDone={onClose} />
+        <ContactAction label="WhatsApp" color="#25D366" icon={<WhatsAppIcon size={26} />} href={whatsappUrl} external onDone={onClose} />
+      </div>
+      <div className="mt-4">
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
       </div>
     </Sheet>
   );

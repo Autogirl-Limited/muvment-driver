@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
@@ -9,7 +9,11 @@ import { Button } from "@/components/ui/Button";
 import { Screen } from "@/components/ui/Screen";
 import { TextField } from "@/components/ui/TextField";
 import { Wordmark } from "@/components/layout/Logo";
+import { storage } from "@/lib/utils/storage";
 import { useToast } from "@/providers/ToastProvider";
+
+const LAST_EMAIL_KEY = "last-signed-in-email";
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 export default function LoginPage() {
   const router = useRouter();
@@ -19,13 +23,37 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [isPending, setIsPending] = useState(false);
   const [backendError, setBackendError] = useState<string>();
+  const [emailError, setEmailError] = useState<string>();
+  const [passwordError, setPasswordError] = useState<string>();
 
-  const isFormValid = email.trim().length > 0 && password.length > 0;
+  // Remember the last signed-in email, so a returning driver only types a password.
+  useEffect(() => {
+    const remembered = storage.get(LAST_EMAIL_KEY);
+
+    if (remembered) {
+      setEmail((current) => current || remembered);
+    }
+  }, []);
+
+  const validate = () => {
+    const trimmed = email.trim();
+    const nextEmailError = !trimmed
+      ? "Enter your email address."
+      : !EMAIL_PATTERN.test(trimmed)
+        ? "Enter a valid email address, like name@example.com."
+        : undefined;
+    const nextPasswordError = password ? undefined : "Enter your password.";
+
+    setEmailError(nextEmailError);
+    setPasswordError(nextPasswordError);
+
+    return !nextEmailError && !nextPasswordError;
+  };
 
   const handleLogin = async (event: FormEvent) => {
     event.preventDefault();
 
-    if (!isFormValid || isPending) {
+    if (isPending || !validate()) {
       return;
     }
 
@@ -43,13 +71,14 @@ export default function LoginPage() {
         const message =
           result?.code && result.code !== "credentials"
             ? result.code
-            : "Please check your email and password";
+            : "Check your email and password, then try again.";
 
         setBackendError(message);
         toast.error("Login failed", message);
         return;
       }
 
+      storage.set(LAST_EMAIL_KEY, email.trim());
       toast.success("Login Successful");
       const next = searchParams.get("next");
       router.replace(next && next.startsWith("/") ? next : "/home");
@@ -76,10 +105,17 @@ export default function LoginPage() {
 
         <form onSubmit={handleLogin} noValidate>
           <TextField
-            label="Email Address"
-            placeholder="Enter your email address"
+            floating
+            label="Email address"
+            placeholder="name@example.com"
             value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            onChange={(event) => {
+              setEmail(event.target.value);
+              setEmailError(undefined);
+              setBackendError(undefined);
+            }}
+            hasError={Boolean(emailError)}
+            errorMessage={emailError}
             type="email"
             inputMode="email"
             autoCapitalize="none"
@@ -88,14 +124,19 @@ export default function LoginPage() {
           />
 
           <TextField
+            floating
             label="Password"
             placeholder="Enter your password"
             value={password}
-            onChange={(event) => setPassword(event.target.value)}
+            onChange={(event) => {
+              setPassword(event.target.value);
+              setPasswordError(undefined);
+              setBackendError(undefined);
+            }}
             isPassword
             autoComplete="current-password"
-            hasError={Boolean(backendError)}
-            errorMessage={backendError}
+            hasError={Boolean(backendError || passwordError)}
+            errorMessage={passwordError ?? backendError}
           />
 
           <div className="mt-1 mb-8 flex justify-end">
@@ -104,7 +145,7 @@ export default function LoginPage() {
             </Link>
           </div>
 
-          <Button type="submit" disabled={!isFormValid} loading={isPending}>
+          <Button type="submit" loading={isPending}>
             {isPending ? "Signing in..." : "Sign in"}
           </Button>
 

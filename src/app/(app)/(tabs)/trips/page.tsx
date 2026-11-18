@@ -1,45 +1,42 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MoreVertical, Search, X } from "lucide-react";
+import { ListFilter, Search, X } from "lucide-react";
 
 import { DashboardHeader } from "@/components/layout/DashboardHeader";
 import { TripCard } from "@/components/trips/TripCard";
+import { TripStatusScroller, type StatusOption } from "@/components/trips/TripStatusScroller";
 import { DatePickerSheet } from "@/components/ui/DatePickerSheet";
-import { PopoverMenu } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { FilterMenu, type FilterMenuSection } from "@/components/ui/FilterMenu";
 import { Screen } from "@/components/ui/Screen";
 import { CardSkeleton } from "@/components/ui/Skeleton";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { useDriverTrips } from "@/lib/api/hooks/useTrips";
-import type { DriverTrip, DriverTripStatus, StandardTripStatus } from "@/lib/api/types";
+import type { DriverTrip, DriverTripStatus } from "@/lib/api/types";
 import {
   formatApiDate,
-  getDriverTripStandardStatus,
-  getResolvedDriverTripStatus,
+  getDriverTripTab,
   groupDriverTripsForCards,
-  isDriverTripActive,
-  isDriverTripUpcoming,
+  reconcileDriverTripStatistics,
   type DriverTripSortOrder,
 } from "@/lib/utils/driverTrips";
 import { toLagosDate } from "@/lib/utils/lagosTime";
 
 const TRIPS_PAGE_SIZE = 50;
+const SEARCH_DEBOUNCE_MS = 350;
 
 type TripFilter = "All" | "Upcoming" | "Ongoing" | "Completed" | "Cancelled";
 type DateFilter = "Today" | "Yesterday" | "Last 7 days" | "This Month" | null;
+type MenuValue =
+  | { kind: "status"; value: TripFilter }
+  | { kind: "date"; value: DateFilter }
+  | { kind: "custom" };
 
 const TRIP_FILTERS: TripFilter[] = ["All", "Upcoming", "Ongoing", "Completed", "Cancelled"];
-const DATE_FILTERS = ["Today", "Yesterday", "Last 7 days", "This Month", "Custom Date"];
-
-const STANDARD_TRIP_STATUS_BY_TAB: Partial<Record<TripFilter, StandardTripStatus>> = {
-  Cancelled: "CANCELLED",
-  Completed: "COMPLETED",
-  Ongoing: "ONGOING",
-  Upcoming: "UPCOMING",
-};
+const DATE_FILTERS: Exclude<DateFilter, null>[] = ["Today", "Yesterday", "Last 7 days", "This Month"];
 
 // Relative ranges use the Lagos calendar day, the same clock the API uses.
 const addDaysToApiDate = (apiDate: string, days: number) => {
@@ -76,29 +73,35 @@ const getDateRangeParams = (dateFilter: DateFilter, customDate: Date | null) => 
   return { endDate: lastDayOfMonth, startDate: firstDayOfMonth };
 };
 
-const matchesActiveTab = (trip: DriverTrip, activeTab: TripFilter) => {
-  const standardTripStatus = getDriverTripStandardStatus(trip);
-  const tripStatus = getResolvedDriverTripStatus(trip);
+// Tabs follow the driver's own ride state (see getDriverTripTab): a ride that
+// is still going sits in Ongoing, overtime included, whatever the clock says.
+const matchesActiveTab = (trip: DriverTrip, activeTab: TripFilter, nowMs: number) =>
+  activeTab === "All" || getDriverTripTab(trip, nowMs) === activeTab;
 
-  if (activeTab === "All") {
-    return true;
-  }
+/** Re-renders once a minute while `active`, so overtime shows up on time. */
+const useMinuteTick = (active: boolean) => {
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
-  const expectedStandardStatus = STANDARD_TRIP_STATUS_BY_TAB[activeTab];
+  useEffect(() => {
+    if (!active) return;
+    setNowMs(Date.now());
+    const timer = setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, [active]);
 
-  if (standardTripStatus && expectedStandardStatus) {
-    return standardTripStatus === expectedStandardStatus;
-  }
-  if (activeTab === "Upcoming") {
-    return isDriverTripUpcoming(trip);
-  }
-  if (activeTab === "Ongoing") {
-    return isDriverTripActive(trip);
-  }
+  return active ? nowMs : Date.now();
+};
 
-  const expectedStatus = activeTab === "Completed" ? "COMPLETE" : activeTab === "Cancelled" ? "CANCELLED" : undefined;
+/** Debounced copy of a value, so typing doesn't fire a request per keystroke. */
+const useDebouncedValue = <T,>(value: T, delay: number) => {
+  const [debounced, setDebounced] = useState(value);
 
-  return !tripStatus || tripStatus === expectedStatus;
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [delay, value]);
+
+  return debounced;
 };
 
 const formatCustomDate = (date: Date) =>
@@ -113,29 +116,84 @@ export default function TripsPage() {
   const [isMenuVisible, setMenuVisible] = useState(false);
   const [isDatePickerVisible, setDatePickerVisible] = useState(false);
 
+  const debouncedSearch = useDebouncedValue(searchQuery.trim(), SEARCH_DEBOUNCE_MS);
   const dateRangeParams = useMemo(() => getDateRangeParams(dateFilter, customDate), [customDate, dateFilter]);
   const driverTripsQuery = useDriverTrips({
     page: 0,
-    search: searchQuery,
+    search: debouncedSearch,
     size: TRIPS_PAGE_SIZE,
-    tripStatus: STANDARD_TRIP_STATUS_BY_TAB[activeTab],
     ...dateRangeParams,
   });
   const driverTripsContent = driverTripsQuery.data?.data.content;
   const driverTrips = useMemo(() => driverTripsContent ?? [], [driverTripsContent]);
-  const tripStatistics = driverTripsQuery.data?.data.statistics;
+  // The newest trips, unfiltered: what the tab counts are reconciled against.
+  const recentTripsQuery = useDriverTrips({ page: 0, size: 20 });
+  const recentTrips = recentTripsQuery.data?.data.content;
+  const hasLiveRide = [...driverTrips, ...(recentTrips ?? [])].some((trip) => getDriverTripTab(trip) === "Ongoing");
+  // While a ride is live, check each minute so a trip slides into Overtime
+  // (or back out, once an extension is paid) without a pull to refresh.
+  const nowMs = useMinuteTick(hasLiveRide);
+  const { refetch: refetchTrips } = driverTripsQuery;
 
-  const counts: Record<TripFilter, number | undefined> = {
+  useEffect(() => {
+    if (!hasLiveRide) return;
+    const timer = setInterval(() => void refetchTrips(), 60_000);
+    return () => clearInterval(timer);
+  }, [hasLiveRide, refetchTrips]);
+
+  const tripStatistics = useMemo(
+    () => reconcileDriverTripStatistics(driverTripsQuery.data?.data.statistics, recentTrips ?? [], nowMs),
+    [driverTripsQuery.data?.data.statistics, nowMs, recentTrips],
+  );
+
+  // Counts only appear once the first response is in.
+  const statusCounts: Record<TripFilter, number | undefined> = {
     All: tripStatistics?.assignedTrips,
     Upcoming: tripStatistics?.upcomingTrips,
     Ongoing: tripStatistics?.onGoingTrips,
     Completed: tripStatistics?.completedTrips,
     Cancelled: tripStatistics?.cancelledTrips,
   };
+  const statusOptions: StatusOption<TripFilter>[] = TRIP_FILTERS.map((value) => ({
+    count: tripStatistics ? (statusCounts[value] ?? 0) : undefined,
+    label: value,
+    value,
+  }));
+
+  const activeDateLabel = customDate ? formatCustomDate(customDate) : dateFilter;
+  const isDateFiltered = Boolean(activeDateLabel);
+
+  const menuSections: FilterMenuSection<MenuValue>[] = [
+    {
+      title: "Status",
+      items: TRIP_FILTERS.map((value) => ({
+        label: value === "All" ? "All Trips" : value,
+        selected: activeTab === value,
+        value: { kind: "status", value } as MenuValue,
+      })),
+    },
+    {
+      title: "Date",
+      items: [
+        { label: "Any Date", selected: !isDateFiltered, value: { kind: "date", value: null } as MenuValue },
+        ...DATE_FILTERS.map((value) => ({
+          label: value,
+          selected: !customDate && dateFilter === value,
+          value: { kind: "date", value } as MenuValue,
+        })),
+        {
+          detail: customDate ? formatCustomDate(customDate) : undefined,
+          label: customDate ? "Specific Date" : "Choose a Date…",
+          selected: Boolean(customDate),
+          value: { kind: "custom" } as MenuValue,
+        },
+      ],
+    },
+  ];
 
   const visibleTrips = useMemo(
-    () => driverTrips.filter((trip) => matchesActiveTab(trip, activeTab)),
-    [activeTab, driverTrips],
+    () => driverTrips.filter((trip) => matchesActiveTab(trip, activeTab, nowMs)),
+    [activeTab, driverTrips, nowMs],
   );
   const fallbackStatus: DriverTripStatus | undefined =
     activeTab === "Upcoming"
@@ -151,38 +209,45 @@ export default function TripsPage() {
   // else shows the most recent trips first.
   const sortOrder: DriverTripSortOrder =
     activeTab === "Upcoming" || activeTab === "Ongoing" ? "soonest-first" : "latest-first";
+  // nowMs: card labels (Overtime) are worked out from the clock.
   const visibleSections = useMemo(
     () => groupDriverTripsForCards(visibleTrips, fallbackStatus, sortOrder),
-    [fallbackStatus, sortOrder, visibleTrips],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fallbackStatus, sortOrder, visibleTrips, nowMs],
   );
 
   const isSearching = searchQuery.trim().length > 0;
+  // While a new filter or search loads, show placeholders (the counts stay put).
+  const isSwitching = driverTripsQuery.isPlaceholderData || searchQuery.trim() !== debouncedSearch;
   const totalFound = visibleSections.reduce((acc, section) => acc + section.data.length, 0);
   const isLoadingTrips = driverTripsQuery.isLoading;
-  const isTripsError = driverTripsQuery.isError;
+  const isTripsError = driverTripsQuery.isError && !driverTripsQuery.data;
   const tripsErrorMessage = getApiErrorMessage(driverTripsQuery.error);
-  const activeDateLabel = customDate ? formatCustomDate(customDate) : dateFilter;
 
   const refresh = useCallback(async () => {
     await driverTripsQuery.refetch();
   }, [driverTripsQuery]);
   const pull = usePullToRefresh(refresh);
 
-  const handleDropdownSelect = (option: string) => {
+  const handleMenuSelect = (item: MenuValue) => {
     setMenuVisible(false);
 
-    if (option === "Custom Date") {
+    if (item.kind === "custom") {
+      // Let the menu finish closing before the calendar rises.
       setTimeout(() => setDatePickerVisible(true), 150);
       return;
     }
-    if (TRIP_FILTERS.includes(option as TripFilter)) {
-      setActiveTab(option as TripFilter);
-      setDateFilter(null);
-      setCustomDate(null);
+    if (item.kind === "status") {
+      setActiveTab(item.value);
       return;
     }
 
-    setDateFilter(option as DateFilter);
+    setDateFilter(item.value);
+    setCustomDate(null);
+  };
+
+  const clearDate = () => {
+    setDateFilter(null);
     setCustomDate(null);
   };
 
@@ -191,74 +256,51 @@ export default function TripsPage() {
       {pull.indicator}
       <DashboardHeader title="Trips" />
 
-      {/* Search */}
-      <div className="px-5 pb-3">
-        <div className="flex h-12 items-center gap-2 rounded-2xl border border-border bg-surface px-3 shadow-card focus-within:border-accent">
-          <Search size={18} className="shrink-0 text-text-4" />
+      {/* Search + filter */}
+      <div className="flex items-center gap-2 px-5 pb-3">
+        <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl bg-fill px-3 focus-within:ring-2 focus-within:ring-accent/40">
+          <Search size={16} className="shrink-0 text-text-4" />
           <input
             type="search"
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Search by trip ID or Client Name"
+            placeholder="Trip ID or client name"
             enterKeyHint="search"
-            className="h-full min-w-0 flex-1 bg-transparent text-[15px] text-text outline-none placeholder:text-text-4"
+            className="h-full min-w-0 flex-1 bg-transparent text-[16px] text-text outline-none placeholder:text-text-4 [&::-webkit-search-cancel-button]:hidden"
           />
           {searchQuery && (
             <button type="button" onClick={() => setSearchQuery("")} className="pressable-soft p-1 text-text-4" aria-label="Clear search">
               <X size={16} />
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => setMenuVisible(true)}
-            className="pressable flex h-9 w-9 items-center justify-center rounded-xl border border-border text-text-3"
-            aria-label="Filters"
-          >
-            <MoreVertical size={18} />
-          </button>
         </div>
+        <button
+          type="button"
+          onClick={() => setMenuVisible(true)}
+          className={`pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${
+            isDateFiltered || activeTab !== "All" ? "bg-accent text-white" : "bg-fill text-accent"
+          }`}
+          aria-label="Filter trips"
+          aria-haspopup="menu"
+        >
+          <ListFilter size={19} />
+        </button>
       </div>
 
-      {isSearching && !isLoadingTrips && !isTripsError && (
+      {(isSearching || isDateFiltered) && !isLoadingTrips && !isTripsError && (
         <p className="text-footnote px-5 pb-2 font-semibold text-text">
           {totalFound} Trip{totalFound !== 1 ? "s" : ""} Found
         </p>
       )}
 
-      {/* Segmented filter chips */}
-      <div className="glass sticky top-0 z-20 border-y border-separator py-2.5">
-        <div className="scrollbar-none flex gap-2 overflow-x-auto px-5">
-          {TRIP_FILTERS.map((tab) => {
-            const isActive = activeTab === tab;
-            const count = counts[tab];
-            const label = isLoadingTrips && count === undefined ? tab : `${tab} (${count ?? 0})`;
-
-            return (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => {
-                  setActiveTab(tab);
-                  setDateFilter(null);
-                  setCustomDate(null);
-                }}
-                className={`pressable shrink-0 rounded-full px-4 py-1.5 text-[14px] font-medium transition-colors ${
-                  isActive ? "bg-navy-mid text-white dark:bg-accent" : "bg-fill text-text-2"
-                }`}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
+      <div className="glass sticky top-0 z-20 border-y border-separator pt-2.5">
+        <TripStatusScroller options={statusOptions} value={activeTab} onChange={setActiveTab} />
         {activeDateLabel && (
-          <div className="mt-2 px-5">
+          <div className="-mt-1 px-5 pb-2.5">
             <button
               type="button"
-              onClick={() => {
-                setDateFilter(null);
-                setCustomDate(null);
-              }}
+              onClick={clearDate}
+              aria-label={`Date: ${activeDateLabel}. Clear date filter`}
               className="pressable inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1 text-[12px] font-semibold text-accent-text"
             >
               {activeDateLabel}
@@ -269,7 +311,7 @@ export default function TripsPage() {
       </div>
 
       <div className="flex-1 px-5 pt-4">
-        {isLoadingTrips ? (
+        {isLoadingTrips || isSwitching ? (
           <>
             <CardSkeleton />
             <CardSkeleton />
@@ -296,16 +338,22 @@ export default function TripsPage() {
             description={`No trips match "${searchQuery}". Check the trip ID or client name and try again.`}
           />
         ) : (
-          <EmptyState title="No trips found" description="Try another status, date, or search term." />
+          <EmptyState
+            title="No trips found"
+            description={
+              isDateFiltered
+                ? "Nothing matches this status and date. Try another date."
+                : "Try another status, or pull down to refresh."
+            }
+          />
         )}
       </div>
 
-      <PopoverMenu
+      <FilterMenu
         open={isMenuVisible}
         onClose={() => setMenuVisible(false)}
-        options={[...TRIP_FILTERS, ...DATE_FILTERS]}
-        separatorBefore={["Today"]}
-        onSelect={handleDropdownSelect}
+        sections={menuSections}
+        onSelect={handleMenuSelect}
       />
 
       <DatePickerSheet

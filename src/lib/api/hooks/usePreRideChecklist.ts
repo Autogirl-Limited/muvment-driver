@@ -5,10 +5,11 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 
-import { apiFetchClient } from "../client";
+import { ApiRequestError, apiFetchClient } from "../client";
 import { syncTrackingWithStatus } from "../../tracking/useTripTracker";
 import type {
   ApiErrorResponse,
+  ApiResponse,
   ChecklistInvoiceVehicle,
   ChecklistInvoiceVehicleData,
   ChecklistInvoiceVehiclesResponse,
@@ -18,6 +19,8 @@ import type {
   DriverTripDetailsResponse,
   DriverTripStatus,
   PreRideChecklistSummary,
+  SubmittedChecklistPhotos,
+  SubmittedChecklistPhotosResponse,
   PostRideChecklistAggregateResponse,
   PreRideChecklistSummaryResponse,
   SubmitDriverPhotoChecklistPayload,
@@ -33,6 +36,8 @@ import type {
 
 export const DRIVER_APP_CHECKLISTS_PATH = "/driver-app/checklists";
 export const VEHICLE_FEATURES_PATH = "/public/vehicle-features";
+export const ASSIGNED_VEHICLE_PATH = "/driver-app/settings/vehicle";
+export const ASSIGNED_VEHICLE_QUERY_KEY = ["driver-assigned-vehicle"] as const;
 
 export const PRE_RIDE_CHECKLIST_SUMMARY_QUERY_KEY = [
   "pre-ride-checklist-summary",
@@ -82,7 +87,7 @@ const buildChecklistStepSubmitPath = (step: string) =>
 const buildChecklistTrackerPath = (trackerId: string, step: string) =>
   `${DRIVER_APP_CHECKLISTS_PATH}/${encodeURIComponent(trackerId)}/${step}`;
 
-const toChecklistInvoiceVehicle = (
+export const toChecklistInvoiceVehicle = (
   value: ChecklistInvoiceVehicleData | null | undefined,
   source: ChecklistInvoiceVehicle["source"],
 ): ChecklistInvoiceVehicle | undefined => {
@@ -764,3 +769,60 @@ export const useTransitionDriverTripStatus = () => {
     },
   });
 };
+
+/**
+ * The vehicle currently assigned to the driver. Always refetched so a vehicle
+ * that was just assigned shows up without waiting on cached profile data.
+ * `data` is null when the driver has no vehicle assigned.
+ */
+export const useAssignedVehicle = () =>
+  useQuery<ChecklistInvoiceVehicle | null, Error>({
+    queryKey: ASSIGNED_VEHICLE_QUERY_KEY,
+    queryFn: async () => {
+      try {
+        const response = await apiFetchClient.get<ApiResponse<ChecklistInvoiceVehicleData | null>>(
+          ASSIGNED_VEHICLE_PATH,
+        );
+
+        return toChecklistInvoiceVehicle(response.data.data, "ASSIGNED") ?? null;
+      } catch (error) {
+        // "No vehicle assigned" may come back as a 404 rather than empty data.
+        if (error instanceof ApiRequestError && (error.status === 404 || error.status === 204)) {
+          return null;
+        }
+
+        throw error;
+      }
+    },
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+
+export const SUBMITTED_CHECKLIST_PHOTOS_QUERY_KEY = ["submitted-checklist-photos"] as const;
+
+/**
+ * The photos and readings the driver already submitted for this report, to
+ * show a submitted step again when this phone has no copy of its own (another
+ * phone, a reinstall). Resolves to null if the server can't say.
+ */
+export const useSubmittedChecklistPhotos = (
+  trackerId?: string,
+  options: { enabled?: boolean } = {},
+) =>
+  useQuery<SubmittedChecklistPhotos | null, Error>({
+    queryKey: [...SUBMITTED_CHECKLIST_PHOTOS_QUERY_KEY, trackerId],
+    queryFn: async () => {
+      try {
+        const response = await apiFetchClient.get<SubmittedChecklistPhotosResponse>(
+          buildChecklistPath(trackerId ?? "", "photos"),
+        );
+        return response.data.data ?? null;
+      } catch {
+        // An older server without this endpoint: the summary is all there is.
+        return null;
+      }
+    },
+    enabled: Boolean(trackerId) && (options.enabled ?? true),
+    staleTime: 60_000,
+  });

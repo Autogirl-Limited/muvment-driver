@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 
-import { NotificationIcon } from "@/components/notifications/NotificationCard";
 import { BackButton } from "@/components/ui/BackButton";
 import { Pill } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -17,7 +16,8 @@ import {
   useUserNotifications,
 } from "@/lib/api/hooks/useNotifications";
 import type { UserNotification } from "@/lib/api/types";
-import { formatNotificationDetailTimestamp, getNotificationIcon } from "@/lib/utils/notificationDisplay";
+import { formatNotificationDetailTimestamp } from "@/lib/utils/notificationDisplay";
+import { notificationLook } from "@/lib/utils/notificationLook";
 import { openExternalUrl } from "@/lib/utils/deviceActions";
 import { useToast } from "@/providers/ToastProvider";
 
@@ -79,9 +79,20 @@ export default function NotificationDetailPage() {
         <div className="anim-rise-in px-5 pb-8">
           <article className="card p-5">
             <div className="flex items-start gap-4">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent">
-                <NotificationIcon name={getNotificationIcon(notification)} size={22} />
-              </span>
+              {(() => {
+                const look = notificationLook(notification);
+                const Icon = look.icon;
+
+                return (
+                  <span
+                    aria-hidden
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-white"
+                    style={{ backgroundImage: `linear-gradient(160deg, ${look.tint}, ${look.tint}CC)` }}
+                  >
+                    <Icon size={24} />
+                  </span>
+                );
+              })()}
               <div className="min-w-0 flex-1">
                 <h2 className="text-title-2 text-text">{notification.title}</h2>
                 <p className="text-callout mt-1 text-text-3">

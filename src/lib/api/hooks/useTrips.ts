@@ -1,4 +1,6 @@
+import type { QueryClient } from "@tanstack/react-query";
 import {
+  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
@@ -89,6 +91,8 @@ export const useDriverTrips = (params: DriverTripsQueryParams = {}) =>
       return response.data;
     },
     staleTime: 30_000,
+    // Keep the last results on screen while a new filter or search loads.
+    placeholderData: keepPreviousData,
   });
 
 export const useDriverTrip = (
@@ -176,4 +180,17 @@ export const useCreateIncidentReport = () => {
       });
     },
   });
+};
+
+/**
+ * Refreshes everything that shows a trip's ride state: its detail (timer,
+ * status, paid extension), the trip lists and the counts. Called when a trip
+ * notification arrives, e.g. "Booking extended" once the client has paid.
+ */
+export const refreshTripQueries = (queryClient: QueryClient, tripId?: string | null) => {
+  if (tripId) {
+    void queryClient.invalidateQueries({ queryKey: ["driver-trip", tripId] });
+  }
+  void queryClient.invalidateQueries({ queryKey: ["driver-trips"] });
+  void queryClient.invalidateQueries({ queryKey: ["driver-trip-statistics"] });
 };

@@ -1,12 +1,21 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { Client, type IMessage, type StompSubscription } from "@stomp/stompjs";
 import SockJS from "sockjs-client";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { getAccessToken } from "@/lib/api/client";
+import { CHECKLIST_AI_QUERY_KEY } from "@/lib/api/hooks/useChecklistAi";
 import { USER_NOTIFICATIONS_QUERY_KEY, upsertLoadedNotification } from "@/lib/api/hooks/useNotifications";
+import {
+  POST_RIDE_CHECKLIST_AGGREGATE_QUERY_KEY,
+  PRE_RIDE_CHECKLIST_SUMMARY_QUERY_KEY,
+} from "@/lib/api/hooks/usePreRideChecklist";
+import { refreshTripQueries } from "@/lib/api/hooks/useTrips";
+import { rememberLiveNotification, setNotificationSocketStatus } from "@/lib/notifications/liveNotifications";
+import { claimNotificationToast, toAppPath } from "@/lib/utils/notificationLinks";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import type { NotificationPriority, NotificationType, UserNotification } from "@/lib/api/types";
 import { useToast } from "@/providers/ToastProvider";
@@ -49,6 +58,11 @@ const deriveSockJsUrlFromApiBase = () => {
     return undefined;
   }
 };
+
+/** The entity name of a finished checklist AI job. */
+const CHECKLIST_AI_ENTITY = "ChecklistAnalysis";
+const isChecklistPath = (path: string | null | undefined) =>
+  Boolean(path && (path.startsWith("/checklist") || path.startsWith("/post-ride-checklist")));
 
 const WS_URL = getSockJsUrl(process.env.NEXT_PUBLIC_WS_URL) ?? deriveSockJsUrlFromApiBase();
 
@@ -118,12 +132,19 @@ const parseSocketMessage = (message: IMessage): UserNotification | undefined => 
 export function NotificationSocketBridge() {
   const queryClient = useQueryClient();
   const toast = useToast();
+  const router = useRouter();
+  const pathname = usePathname();
+  const pathnameRef = useRef(pathname);
   const currentUserQuery = useCurrentUser();
   const userId = currentUserQuery.data?.data.userId;
   const subscriptionDestination = useMemo(
     () => (userId ? `/user/${userId}/queue/notifications` : undefined),
     [userId],
   );
+
+  useEffect(() => {
+    pathnameRef.current = pathname;
+  }, [pathname]);
 
   useEffect(() => {
     if (!WS_URL || !subscriptionDestination) {
@@ -154,6 +175,8 @@ export function NotificationSocketBridge() {
           return;
         }
 
+        setNotificationSocketStatus("connected");
+
         subscription = client.subscribe(subscriptionDestination, (message) => {
           const notification = parseSocketMessage(message);
 
@@ -161,15 +184,47 @@ export function NotificationSocketBridge() {
             return;
           }
 
+          if (notification.isDeleted) {
+            return;
+          }
+
+          rememberLiveNotification(notification);
           upsertLoadedNotification(queryClient, notification);
-          toast.show({
-            type: notification.type === "ERROR" || notification.priority === "HIGH" ? "error" : "success",
-            title: notification.title,
-            message: notification.message,
-          });
-          void queryClient.invalidateQueries({ queryKey: USER_NOTIFICATIONS_QUERY_KEY });
+
+          // An AI result for the checklist: refresh it now instead of waiting for the next poll.
+          // The checklist screens show the result themselves, so only toast it elsewhere.
+          const isChecklistResult = notification.entityName === CHECKLIST_AI_ENTITY;
+          if (isChecklistResult) {
+            void queryClient.invalidateQueries({ queryKey: CHECKLIST_AI_QUERY_KEY });
+            void queryClient.invalidateQueries({ queryKey: PRE_RIDE_CHECKLIST_SUMMARY_QUERY_KEY });
+            void queryClient.invalidateQueries({ queryKey: POST_RIDE_CHECKLIST_AGGREGATE_QUERY_KEY });
+          }
+
+          // Ride timer news ("Booking extended", "Ride started automatically", ...):
+          // refresh the trip so the counter, status and paid extension update now.
+          if (notification.entityName === "Trip") {
+            refreshTripQueries(queryClient, notification.entityId);
+          }
+
+          // A push for the same notification may already have shown it.
+          if (
+            !(isChecklistResult && isChecklistPath(pathnameRef.current)) &&
+            !notification.isRead &&
+            document.visibilityState === "visible" &&
+            claimNotificationToast(notification.id)
+          ) {
+            const path = toAppPath(notification.actionUrl);
+
+            toast.show({
+              type: notification.type === "ERROR" || notification.priority === "HIGH" ? "error" : "success",
+              title: notification.title,
+              message: notification.message,
+              onPress: path ? () => router.push(path) : undefined,
+            });
+          }
         });
       },
+      onWebSocketClose: () => setNotificationSocketStatus("disconnected"),
       onStompError: (frame) => {
         if (IS_DEV) {
           console.warn("[notifications:socket] STOMP error", frame.headers.message);
@@ -177,6 +232,7 @@ export function NotificationSocketBridge() {
       },
     });
 
+    setNotificationSocketStatus("connecting");
     client.activate();
 
     const onVisibility = () => {
@@ -189,11 +245,12 @@ export function NotificationSocketBridge() {
 
     return () => {
       isActive = false;
+      setNotificationSocketStatus("idle");
       document.removeEventListener("visibilitychange", onVisibility);
       subscription?.unsubscribe();
       void client.deactivate();
     };
-  }, [queryClient, subscriptionDestination, toast]);
+  }, [queryClient, router, subscriptionDestination, toast]);
 
   return null;
 }

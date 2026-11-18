@@ -5,16 +5,17 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, ChevronRight, Circle } from "lucide-react";
 
 import { BackButton } from "@/components/ui/BackButton";
-import { Pill } from "@/components/ui/Badge";
+import { ReportContinueCard } from "@/components/checklist/ReportContinueCard";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { NavBar, Screen } from "@/components/ui/Screen";
+import { NavBar, Screen, SectionHeader } from "@/components/ui/Screen";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { CardSkeleton } from "@/components/ui/Skeleton";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { useInfiniteChecklistTrackers, usePreRideChecklistSummary } from "@/lib/api/hooks/usePreRideChecklist";
 import type { ChecklistTracker, PreRideChecklistSummary } from "@/lib/api/types";
 import { getChecklistStepRoute, getPreRideUnlockedStep } from "@/lib/utils/checklistNavigation";
+import { reportDetailRoute } from "@/lib/utils/reportProgress";
 import { getLagosLocalDateTimeRange } from "@/lib/utils/lagosTime";
 
 const HISTORY_RANGE_OPTIONS = [
@@ -25,13 +26,6 @@ const HISTORY_RANGE_OPTIONS = [
 ] as const;
 
 type HistoryRange = (typeof HISTORY_RANGE_OPTIONS)[number]["value"];
-type HistoryStatus = "all" | "complete" | "in-progress";
-
-const HISTORY_STATUS_OPTIONS: Array<{ label: string; value: HistoryStatus }> = [
-  { label: "All", value: "all" },
-  { label: "In progress", value: "in-progress" },
-  { label: "Complete", value: "complete" },
-];
 
 const STEP_LABELS: Array<{
   key: keyof Pick<PreRideChecklistSummary, "exteriorPhotos" | "interiorPhotos" | "vehicleHealthCheckPhotos" | "driverPhoto">;
@@ -42,14 +36,6 @@ const STEP_LABELS: Array<{
   { key: "vehicleHealthCheckPhotos", label: "Vehicle Health" },
   { key: "driverPhoto", label: "Driver Photo" },
 ];
-
-const dateTimeFormatter = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
-
-const formatTrackerDate = (value?: string | null) => {
-  if (!value) return undefined;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? undefined : dateTimeFormatter.format(date);
-};
 
 const isTrackerComplete = (tracker: ChecklistTracker) => {
   const status = tracker.status ?? tracker.checklistStatus;
@@ -62,78 +48,96 @@ const isTrackerComplete = (tracker: ChecklistTracker) => {
   );
 };
 
-const TrackerHistoryCard = ({ tracker }: { tracker: ChecklistTracker }) => {
+const monthFormatter = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" });
+const dayFormatter = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" });
+const timeFormatter = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" });
+
+/** The day a report is filed under: when its pre-ride (or post-ride) was sent. */
+const trackerDate = (tracker: ChecklistTracker) => {
+  const value = tracker.preRideCompletedAt ?? tracker.postRideCompletedAt;
+  const date = value ? new Date(value) : undefined;
+  return date && !Number.isNaN(date.getTime()) ? date : undefined;
+};
+
+const TrackerRow = ({ tracker, last }: { tracker: ChecklistTracker; last: boolean }) => {
   const router = useRouter();
   const summaryQuery = usePreRideChecklistSummary(tracker.id);
   const summary = summaryQuery.data?.data;
   const isComplete = isTrackerComplete(tracker) || (summary ? STEP_LABELS.every(({ key }) => summary[key]?.valid) : false);
-  const unlockedStep = getPreRideUnlockedStep(summary);
-  const vehicleName = summary?.vehicleInfo?.vehicleName?.trim();
-  const vehiclePlate = summary?.vehicleInfo?.vehicleIdentifier?.trim();
-  const dateLabel = formatTrackerDate(tracker.preRideCompletedAt);
+  const date = trackerDate(tracker);
+  const doneCount = STEP_LABELS.filter(({ key }) => summary?.[key]?.valid === true).length;
 
   return (
     <button
       type="button"
-      onClick={() => router.push(getChecklistStepRoute("preRide", tracker.id, isComplete ? 4 : unlockedStep))}
-      className="card pressable mb-3 w-full p-4 text-left"
+      onClick={() => router.push(isComplete ? reportDetailRoute(tracker) : getChecklistStepRoute("preRide", tracker.id, getPreRideUnlockedStep(summary)))}
+      className="pressable flex w-full items-center gap-3 pl-4 text-left"
     >
-      <div className="mb-3 flex items-center justify-between">
-        <Pill tone={isComplete ? "success" : "warning"}>{isComplete ? "Complete" : "In progress"}</Pill>
-        <span className="flex items-center gap-2">
-          {dateLabel && <span className="text-caption text-text-4">{dateLabel}</span>}
-          <ChevronRight size={18} className="text-text-4" />
-        </span>
-      </div>
-
-      {summaryQuery.isLoading ? (
-        <p className="text-footnote text-text-3">Loading details...</p>
-      ) : summaryQuery.isError ? (
-        <p className="text-footnote text-danger">{getApiErrorMessage(summaryQuery.error) ?? "Unable to load this checklist."}</p>
+      {summary?.vehicleInfo?.vehicleImageUrl?.trim() ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={summary.vehicleInfo.vehicleImageUrl} alt="" className="h-11 w-11 shrink-0 rounded-xl bg-fill object-cover" />
       ) : (
-        <>
-          <p className="text-body font-semibold text-text">{vehicleName || "Vehicle unavailable"}</p>
-          {vehiclePlate && <p className="text-caption mt-0.5 mb-3 text-text-3">{vehiclePlate}</p>}
-          <div className="mt-3 flex flex-wrap gap-2">
-            {STEP_LABELS.map(({ key, label }) => {
-              const valid = summary?.[key]?.valid === true;
-
-              return (
-                <span
-                  key={key}
-                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] ${
-                    valid ? "border-success/30 bg-success-soft text-success-text" : "border-border bg-surface-alt text-text-3"
-                  }`}
-                >
-                  {valid ? <CheckCircle2 size={12} className="text-success" /> : <Circle size={12} className="text-text-4" />}
-                  {label}
-                </span>
-              );
-            })}
-          </div>
-        </>
+        <span
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+            isComplete ? "bg-success-soft text-success-text" : "bg-warning-soft text-warning-text"
+          }`}
+        >
+          {isComplete ? <CheckCircle2 size={20} /> : <Circle size={20} />}
+        </span>
       )}
+      <span className={`flex min-h-[68px] min-w-0 flex-1 items-center gap-2 py-3 pr-4 ${last ? "" : "border-b border-border"}`}>
+        <span className="min-w-0 flex-1">
+          <span className="text-body block truncate font-semibold text-text">
+            {summaryQuery.isLoading ? "Loading…" : summary?.vehicleInfo?.vehicleName?.trim() || "Pilot report"}
+          </span>
+          <span className="text-footnote block truncate text-text-3">
+            {date ? `${dayFormatter.format(date)} · ${timeFormatter.format(date)}` : "Not sent yet"}
+            {summary?.vehicleInfo?.vehicleIdentifier ? ` · ${summary.vehicleInfo.vehicleIdentifier}` : ""}
+          </span>
+        </span>
+        {!isComplete && (
+          <span className="text-caption shrink-0 tabular-nums text-text-3">
+            {doneCount}/{STEP_LABELS.length}
+          </span>
+        )}
+        <ChevronRight size={18} className="shrink-0 text-text-4" />
+      </span>
     </button>
   );
 };
 
 export default function ChecklistHistoryPage() {
   const [historyRange, setHistoryRange] = useState<HistoryRange>("730");
-  const [historyStatus, setHistoryStatus] = useState<HistoryStatus>("all");
   const range = useMemo(() => getLagosLocalDateTimeRange(Number(historyRange)), [historyRange]);
   const trackersQuery = useInfiniteChecklistTrackers({ from: range.from, size: 50, to: range.to });
   const trackers = useMemo(
     () => trackersQuery.data?.pages.flatMap((page) => page.data.content) ?? [],
     [trackersQuery.data],
   );
-  const filteredTrackers = useMemo(
-    () => trackers.filter((tracker) => {
-      if (historyStatus === "all") return true;
-      return isTrackerComplete(tracker) === (historyStatus === "complete");
-    }),
-    [historyStatus, trackers],
-  );
-  const totalItems = trackersQuery.data?.pages[0]?.data.totalItems ?? 0;
+  const { openReports, months } = useMemo(() => {
+    const open: ChecklistTracker[] = [];
+    const byMonth = new Map<string, { title: string; trackers: ChecklistTracker[] }>();
+
+    trackers.forEach((tracker) => {
+      if (!isTrackerComplete(tracker)) {
+        open.push(tracker);
+        return;
+      }
+      const date = trackerDate(tracker);
+      const key = date ? `${date.getFullYear()}-${String(date.getMonth()).padStart(2, "0")}` : "unknown";
+      if (!byMonth.has(key)) byMonth.set(key, { title: date ? monthFormatter.format(date) : "Earlier", trackers: [] });
+      byMonth.get(key)!.trackers.push(tracker);
+    });
+
+    const grouped = [...byMonth.entries()]
+      .sort(([left], [right]) => (left < right ? 1 : -1))
+      .map(([, value]) => ({
+        ...value,
+        trackers: value.trackers.sort((a, b) => (trackerDate(b)?.getTime() ?? 0) - (trackerDate(a)?.getTime() ?? 0)),
+      }));
+
+    return { months: grouped, openReports: open };
+  }, [trackers]);
   const errorMessage = getApiErrorMessage(trackersQuery.error);
 
   return (
@@ -141,22 +145,16 @@ export default function ChecklistHistoryPage() {
       <NavBar
         left={<BackButton />}
         largeTitle="Checklist History"
-        subtitle="Resume an incomplete pre-ride checklist or review one you already submitted."
+        subtitle="Your pre-ride pilot reports. Pick up one you haven't sent, or look back at the rest."
       />
 
       <div className="px-5 pb-10">
-        <div className="mb-5 space-y-3">
+        <div className="mb-5">
           <SegmentedControl
             ariaLabel="Checklist history date range"
             options={[...HISTORY_RANGE_OPTIONS]}
             value={historyRange}
             onChange={setHistoryRange}
-          />
-          <SegmentedControl
-            ariaLabel="Checklist completion status"
-            options={HISTORY_STATUS_OPTIONS}
-            value={historyStatus}
-            onChange={setHistoryStatus}
           />
         </div>
 
@@ -169,14 +167,28 @@ export default function ChecklistHistoryPage() {
           <EmptyState title="Unable to load checklists" description={errorMessage ?? "Please check your connection and try again."} />
         ) : trackers.length === 0 ? (
           <EmptyState title="No checklists found" description="Checklists you start in this date range will appear here." />
-        ) : filteredTrackers.length === 0 ? (
-          <EmptyState title="No matching checklists" description="Try another status or date range." />
         ) : (
           <>
-            <p className="text-caption mb-3 text-text-4">
-              Loaded {trackers.length} of {totalItems}
-            </p>
-            {filteredTrackers.map((tracker) => <TrackerHistoryCard key={tracker.id} tracker={tracker} />)}
+            {openReports.length > 0 && (
+              <>
+                <SectionHeader>Not Sent Yet</SectionHeader>
+                <div className="mb-6 space-y-3">
+                  {openReports.map((tracker) => (
+                    <ReportContinueCard key={tracker.id} trackerId={tracker.id} />
+                  ))}
+                </div>
+              </>
+            )}
+            {months.map((month) => (
+              <section key={month.title} className="mb-6">
+                <SectionHeader>{month.title}</SectionHeader>
+                <div className="card overflow-hidden p-0">
+                  {month.trackers.map((tracker, index) => (
+                    <TrackerRow key={tracker.id} tracker={tracker} last={index === month.trackers.length - 1} />
+                  ))}
+                </div>
+              </section>
+            ))}
           </>
         )}
         {!trackersQuery.isLoading && !trackersQuery.isError && trackersQuery.hasNextPage && (
