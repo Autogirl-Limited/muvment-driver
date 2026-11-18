@@ -11,8 +11,12 @@
   "dependencies": {
     "@serwist/next": "^9.5.13",
     "@stomp/stompjs": "^7.5.0",
+    "@tanstack/query-async-storage-persister": "^5.108.0",
     "@tanstack/react-query": "^5.104.5",
+    "@tanstack/react-query-persist-client": "^5.108.0",
+    "idb-keyval": "^6.3.0",
     "leaflet": "^1.9.4",
+    "libphonenumber-js": "^1.13.16",
     "lucide-react": "^1.61.0",
     "next": "15.5.28",
     "next-auth": "^5.0.0-beta.32",
