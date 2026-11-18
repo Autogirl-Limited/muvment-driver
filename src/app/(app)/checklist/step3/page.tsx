@@ -16,7 +16,7 @@ import {
   useDashboardAnalysisStatus,
 } from "@/components/checklist/InteriorStep";
 import { PhotoUploadCard } from "@/components/checklist/PhotoUploadCard";
-import { usePhotoSlots } from "@/hooks/usePhotoSlot";
+import { clearPhotoDraft, usePhotoSlots } from "@/hooks/usePhotoSlot";
 import { getApiErrorMessage, isChecklistStepConflictError } from "@/lib/api/errors";
 import {
   usePreRideChecklistSummary,
@@ -79,13 +79,13 @@ export default function ChecklistStep3Page() {
   });
   const savedMetadata = checklistSummary?.interiorPhotos?.metadata;
   const hasSavedInteriorSubmission = checklistSummary?.interiorPhotos?.valid === true;
-  const slots = usePhotoSlots(INTERIOR_KEYS);
+  const slots = usePhotoSlots(INTERIOR_KEYS, activeTrackerId ? `interior:${activeTrackerId}` : undefined);
   const [selectedFeatureIds, setSelectedFeatureIds] = useState<string[]>([]);
   const [analysisMetadata, setAnalysisMetadata] = useState<VehicleMetadata | null>(null);
   const [isAnalysisReviewVisible, setAnalysisReviewVisible] = useState(false);
   const [odometer, setOdometer] = useState("");
   const [fuelLevel, setFuelLevel] = useState("");
-  const vehicleFeatures = vehicleFeaturesQuery.data?.data ?? [];
+  const vehicleFeatures = (vehicleFeaturesQuery.data?.data ?? []).filter((feature) => feature.category !== "SAFETY_EQUIPMENT");
 
   useEffect(() => {
     setVehicleSelection(readChecklistVehicleSelection(currentUserQuery.data?.data.userId));
@@ -159,6 +159,7 @@ export default function ChecklistStep3Page() {
         payload: { checklistTrackerId: activeTrackerId, checklistType: "PRE_TRIP", fuelLevelInPercentage, odometerKM },
         trackerId: activeTrackerId,
       });
+      clearPhotoDraft(`interior:${activeTrackerId}`);
       router.push(getChecklistStepRoute("preRide", activeTrackerId, 4));
     } catch (error) {
       toast.error("Dashboard correction failed", getApiErrorMessage(error) ?? "Please try again.");
@@ -308,7 +309,7 @@ export default function ChecklistStep3Page() {
       <ReadingsFields odometer={odometer} fuelLevel={fuelLevel} onOdometerChange={setOdometer} onFuelLevelChange={setFuelLevel} />
 
       {isAnalysisReviewVisible && analysisMetadata && (
-        <AnalysisReviewCard metadata={analysisMetadata}>
+        <AnalysisReviewCard metadata={analysisMetadata} trackerId={activeTrackerId || undefined} checklistType="PRE_TRIP">
           <button
             type="button"
             onClick={() => void manuallyReanalyzeDashboard()}

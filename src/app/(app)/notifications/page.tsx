@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCheck } from "lucide-react";
 
@@ -17,29 +17,29 @@ import {
 } from "@/lib/api/hooks/useNotifications";
 import type { UserNotification } from "@/lib/api/types";
 import {
-  formatNotificationTimestamp,
-  getNotificationIcon,
-  isNotificationFromToday,
-} from "@/lib/utils/notificationDisplay";
+  formatRelativeTime,
+  notificationGroup,
+  notificationLook,
+  type NotificationGroup,
+} from "@/lib/utils/notificationLook";
 import { useToast } from "@/providers/ToastProvider";
 
 interface NotificationSection {
-  title: "Today" | "Older";
+  title: NotificationGroup;
   data: UserNotification[];
 }
 
+const GROUP_ORDER: NotificationGroup[] = ["Today", "Yesterday", "Earlier"];
+
 const groupNotifications = (notifications: UserNotification[]): NotificationSection[] => {
-  const today: UserNotification[] = [];
-  const older: UserNotification[] = [];
+  const now = new Date();
+  const groups: Record<NotificationGroup, UserNotification[]> = { Today: [], Yesterday: [], Earlier: [] };
 
   notifications.forEach((notification) => {
-    (isNotificationFromToday(notification.createdAt) ? today : older).push(notification);
+    groups[notificationGroup(notification.createdAt, now)].push(notification);
   });
 
-  return [
-    today.length > 0 ? { title: "Today" as const, data: today } : undefined,
-    older.length > 0 ? { title: "Older" as const, data: older } : undefined,
-  ].filter((section): section is NotificationSection => Boolean(section));
+  return GROUP_ORDER.filter((title) => groups[title].length > 0).map((title) => ({ data: groups[title], title }));
 };
 
 export default function NotificationsPage() {
@@ -48,7 +48,6 @@ export default function NotificationsPage() {
   const notificationsQuery = useUserNotifications();
   const markNotificationRead = useMarkNotificationRead();
   const markAllNotificationsRead = useMarkAllNotificationsRead();
-  const [readingNotificationId, setReadingNotificationId] = useState<string>();
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const notifications = useMemo(
@@ -84,25 +83,15 @@ export default function NotificationsPage() {
     return () => observer.disconnect();
   }, [notificationsQuery]);
 
-  const handleMarkRead = async (notification: UserNotification) => {
-    if (notification.isRead || readingNotificationId) {
-      return;
-    }
-
-    setReadingNotificationId(notification.id);
-
-    try {
-      await markNotificationRead.mutateAsync(notification.id);
-    } catch (error) {
-      toast.error("Unable to update notification", getApiErrorMessage(error) ?? "Please try again.");
-    } finally {
-      setReadingNotificationId(undefined);
-    }
-  };
-
-  const handleOpen = async (notification: UserNotification) => {
+  // Opening a notification marks it read in the background: the list shows it
+  // read at once (see useMarkNotificationRead) and you land on the message
+  // without waiting for the server.
+  const handleOpen = (notification: UserNotification) => {
     if (!notification.isRead) {
-      await handleMarkRead(notification);
+      markNotificationRead.mutate(notification.id, {
+        onError: (error) =>
+          toast.error("Unable to update notification", getApiErrorMessage(error) ?? "Please try again."),
+      });
     }
 
     router.push(`/notification/${encodeURIComponent(notification.id)}`);
@@ -156,19 +145,21 @@ export default function NotificationsPage() {
       ) : sections.length > 0 ? (
         <div className="px-5 pb-6">
           {sections.map((section) => (
-            <section key={section.title} className="mb-2">
-              <p className="text-eyebrow mt-1 mb-3 ml-1 text-text-3">{section.title}</p>
-              {section.data.map((item) => (
-                <NotificationCard
-                  key={item.id}
-                  iconName={getNotificationIcon(item)}
-                  title={item.title}
-                  description={item.message}
-                  timestamp={formatNotificationTimestamp(item.createdAt)}
-                  isRead={item.isRead}
-                  onClick={() => void handleOpen(item)}
-                />
-              ))}
+            <section key={section.title} className="mb-5">
+              <p className="text-eyebrow mb-2 ml-1 text-text-3">{section.title}</p>
+              <div className="card overflow-hidden">
+                {section.data.map((item) => (
+                  <NotificationCard
+                    key={item.id}
+                    look={notificationLook(item)}
+                    title={item.title}
+                    description={item.message}
+                    timestamp={formatRelativeTime(item.createdAt)}
+                    isRead={item.isRead}
+                    onClick={() => handleOpen(item)}
+                  />
+                ))}
+              </div>
             </section>
           ))}
           <div ref={sentinelRef} className="flex justify-center py-4 text-accent">

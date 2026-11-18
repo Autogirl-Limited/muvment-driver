@@ -9,19 +9,16 @@ import {
   AlertTriangle,
   Bell,
   CalendarDays,
-  ChevronDown,
-  ChevronUp,
+  ChevronRight,
   ClipboardList,
   Download,
   FileText,
-  List,
   Landmark,
   Lock,
   LogOut,
   MapPin,
   Monitor,
   Moon,
-  PlusCircle,
   Shield,
   Smartphone,
   Sun,
@@ -37,7 +34,11 @@ import {
   useDriverNotificationSettings,
   useToggleDriverNotificationSettings,
 } from "@/lib/api/hooks/useDriverSettings";
+import { UserAvatar } from "@/components/ui/UserAvatar";
+import { useCurrentUser } from "@/lib/api/hooks/useUsers";
+import { getUserDisplayName } from "@/lib/utils/userProfile";
 import { useBankAccount } from "@/lib/api/hooks/useBankAccount";
+import { clearOfflineCache } from "@/lib/offline/queryPersistence";
 import { ensurePushSubscription, removePushSubscription } from "@/lib/push/webPush";
 import { useInstallPrompt } from "@/providers/InstallPromptProvider";
 import { useTheme, type ThemePreference } from "@/providers/ThemeProvider";
@@ -130,6 +131,35 @@ const ThemeSelector = () => {
   );
 };
 
+/** The driver at the top of Settings: opens their profile. */
+const ProfileCard = () => {
+  const router = useRouter();
+  const userQuery = useCurrentUser();
+  const user = userQuery.data?.data;
+  const name = user ? getUserDisplayName(user) : "Your Profile";
+  const detail = [user?.driverIdentifier ? `Driver ID ${user.driverIdentifier}` : undefined, user?.email]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <button
+      type="button"
+      onClick={() => router.push("/profile")}
+      aria-label={`${name}. ${detail}. Opens your profile`}
+      className="card pressable flex w-full items-center gap-3.5 p-3.5 text-left"
+    >
+      <UserAvatar user={user} size={62} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[21px] font-semibold text-text">{name}</span>
+        <span className="mt-0.5 line-clamp-2 block text-[13.5px] leading-[18px] text-text-3">
+          {detail || "Personal details and vehicle"}
+        </span>
+      </span>
+      <ChevronRight size={18} className="shrink-0 text-text-4" />
+    </button>
+  );
+};
+
 export default function SettingsPage() {
   const router = useRouter();
   const toast = useToast();
@@ -142,7 +172,6 @@ export default function SettingsPage() {
   const [locationPermission, setLocationPermission] = useState<PermissionStatus>("unknown");
   const [isLocationLoading, setLocationLoading] = useState(false);
   const [pushPermission, setPushPermission] = useState<PermissionStatus>("unknown");
-  const [isIncidentReportsExpanded, setIncidentReportsExpanded] = useState(false);
   const [isSignOutModalVisible, setSignOutModalVisible] = useState(false);
   const [isSigningOut, setSigningOut] = useState(false);
 
@@ -240,8 +269,9 @@ export default function SettingsPage() {
 
     try {
       // Stop pushes to this phone before the session goes away.
-      await removePushSubscription();
-      queryClient.clear();
+      // Best-effort: with no signal the backend drops dead endpoints itself.
+      await removePushSubscription().catch(() => undefined);
+      await clearOfflineCache(queryClient);
       await signOut({ redirect: false });
       toast.success("Signed out successfully");
       router.replace("/login");
@@ -266,6 +296,8 @@ export default function SettingsPage() {
       <DashboardHeader title="Settings" />
 
       <div className="space-y-6 px-5 pt-1">
+        <ProfileCard />
+
         {installPrompt.isEligible && (
           <ListGroup>
             <ListRow
@@ -328,12 +360,6 @@ export default function SettingsPage() {
             }
             onClick={() => router.push("/payment-account")}
           />
-          <ListRow
-            icon={<CalendarDays size={18} />}
-            title="My schedule"
-            description="Your shifts and off days for this week and next"
-            onClick={() => router.push("/my-schedule")}
-          />
         </ListGroup>
 
         <ListGroup header="Account">
@@ -342,6 +368,43 @@ export default function SettingsPage() {
             title="Change Password"
             description="Update your account password"
             onClick={() => router.push("/change-password")}
+          />
+        </ListGroup>
+
+        <ListGroup header="Work">
+          <ListRow
+            icon={<CalendarDays size={18} />}
+            title="My Schedule"
+            description="Your shifts and days off"
+            onClick={() => router.push("/my-schedule")}
+          />
+          <ListRow
+            icon={<ClipboardList size={18} />}
+            title="Checklist History"
+            description="Resume or review a pilot report"
+            onClick={() => router.push("/checklist-history")}
+          />
+          <ListRow
+            icon={<AlertTriangle size={18} />}
+            iconTone="warning"
+            title="Report an Incident"
+            description="Send a trip incident with photos"
+            onClick={() => router.push("/incident-report/intro")}
+          />
+          <ListRow
+            icon={<FileText size={18} />}
+            title="Incident Reports"
+            description="Reports you've sent"
+            onClick={() => router.push("/incident-reports")}
+          />
+        </ListGroup>
+
+        <ListGroup header="Support">
+          <ListRow
+            icon={<AlertCircle size={18} />}
+            title="Report a Problem"
+            description="Contact support about an app issue"
+            onClick={reportProblem}
           />
           <ListRow
             icon={<Shield size={18} />}
@@ -357,54 +420,6 @@ export default function SettingsPage() {
           />
         </ListGroup>
 
-        <ListGroup header="Reports">
-          <ListRow
-            icon={<ClipboardList size={18} />}
-            title="Checklist History"
-            description="Resume an incomplete checklist or review a past one"
-            onClick={() => router.push("/checklist-history")}
-          />
-          <ListRow
-            icon={<AlertTriangle size={18} />}
-            iconTone="warning"
-            title="Incident Reports"
-            description="Report incidents and review previous reports"
-            chevron={false}
-            trailing={
-              isIncidentReportsExpanded ? (
-                <ChevronUp size={18} className="text-text-4" />
-              ) : (
-                <ChevronDown size={18} className="text-text-4" />
-              )
-            }
-            onClick={() => setIncidentReportsExpanded((value) => !value)}
-          />
-          {isIncidentReportsExpanded && (
-            <>
-              <ListRow
-                inset
-                icon={<PlusCircle size={16} />}
-                title="Report Incident"
-                description="Submit a trip incident with photo evidence"
-                onClick={() => router.push("/incident-report")}
-              />
-              <ListRow
-                inset
-                icon={<List size={16} />}
-                title="Incident Reports"
-                description="View submitted incident reports"
-                onClick={() => router.push("/incident-reports")}
-              />
-            </>
-          )}
-          <ListRow
-            icon={<AlertCircle size={18} />}
-            title="Report a Problem"
-            description="Contact support about an app issue"
-            onClick={reportProblem}
-          />
-        </ListGroup>
-
         <ListGroup>
           <ListRow
             icon={<LogOut size={18} />}
@@ -414,6 +429,10 @@ export default function SettingsPage() {
             onClick={() => setSignOutModalVisible(true)}
           />
         </ListGroup>
+
+        <p className="text-footnote pb-2 text-center text-text-4">
+          Muvment Driver{process.env.NEXT_PUBLIC_APP_VERSION ? ` · ${process.env.NEXT_PUBLIC_APP_VERSION}` : ""}
+        </p>
       </div>
 
       <AlertDialog

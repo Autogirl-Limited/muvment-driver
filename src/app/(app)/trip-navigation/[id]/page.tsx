@@ -56,7 +56,7 @@ const getTripStatusLabel = (mode: TripNavigationMode, tripDetails?: DriverTripDe
       return "PAUSED";
     }
 
-    return resolvedStatus === "EXTRA_TIME" ? "EXTRA TIME" : "ONGOING";
+    return resolvedStatus === "EXTRA_TIME" ? "OVERTIME" : "ONGOING";
   }
 
   return resolvedStatus ? getDriverTripStatusLabel(resolvedStatus) : "EN ROUTE";

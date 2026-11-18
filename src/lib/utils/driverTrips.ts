@@ -1,10 +1,12 @@
+import type { RideTimer } from "../api/driverPaymentTypes";
 import type {
   DriverTrip,
   DriverTripDetails,
+  DriverTripStatistics,
   DriverTripStatus,
   StandardTripStatus,
 } from "../api/types";
-import { LAGOS_TIME_ZONE, parseLagos } from "./lagosTime";
+import { formatLagosTime, formatMinutes, LAGOS_TIME_ZONE, parseLagos, parseLagosMs } from "./lagosTime";
 
 export type DriverTripBadgeType = "booking" | "owner" | "status";
 
@@ -18,7 +20,22 @@ export interface DriverTripBadgeStyle {
   text: string;
 }
 
+export interface DriverTripExtension {
+  /** Paid time added on top of the original booking, in minutes. */
+  minutes: number;
+  /** "+2h", "+1h 30m" */
+  addedLabel: string;
+  /** The booking's original end, e.g. "3:00 PM". */
+  originalEndLabel?: string;
+  /** Where the ride now runs to, e.g. "5:00 PM". */
+  extendedEndLabel?: string;
+}
+
 export interface DriverTripCardModel {
+  /** Paid time the client added to the booking. */
+  extension?: DriverTripExtension;
+  /** Shown while the ride runs past its booked end. */
+  overtimeNote?: string;
   badges: DriverTripBadge[];
   clientName: string;
   id: string;
@@ -49,7 +66,7 @@ const STATUS_LABELS: Record<DriverTripStatus, string> = {
   CANCELLED: "CANCELLED",
   CHECKED_IN: "CHECKED IN",
   COMPLETE: "COMPLETE",
-  EXTRA_TIME: "EXTRA TIME",
+  EXTRA_TIME: "OVERTIME",
   NOT_STARTED: "NOT STARTED",
   ONGOING: "ONGOING",
   RUNNING_LATE: "RUNNING LATE",
@@ -289,18 +306,108 @@ export const getTerminalDriverTripStatusFromStandardStatus = (
   return undefined;
 };
 
-export const getResolvedDriverTripStatus = (trip: DriverTrip) =>
-  getTerminalDriverTripStatusFromStandardStatus(trip.standardTripStatus) ??
-  getDriverTripStatus(trip);
+/* ------------------------------------------------------------- live ride state
+ *
+ * The backend's `standardTripStatus` is worked out from the clock alone: once
+ * the original end time passes it says COMPLETED, even while the driver is
+ * still driving the client. A ride is only over when the driver (or support)
+ * ends it, so the driver's own ride state wins over that clock guess:
+ *
+ * - started and not ended, before the booked end  -> ONGOING
+ * - started and not ended, past the booked end    -> EXTRA_TIME ("Overtime")
+ * - ended (actualEndAt set)                       -> COMPLETE
+ *
+ * The booked end includes extensions the client has paid for
+ * (`rideTimer.bookedEndAt`), so a paid extension turns Overtime back into
+ * Ongoing as soon as it lands, even before the server's next sweep.
+ */
+
+const RIDING: readonly DriverTripStatus[] = ["ONGOING", "EXTRA_TIME"];
+const PRE_RIDE: readonly DriverTripStatus[] = [
+  "NOT_STARTED",
+  "CHECKED_IN",
+  "AWAITING_PICKUP",
+  "RUNNING_LATE",
+];
+
+/** Where the ride is meant to end: the original end plus paid extensions. */
+export const getBookedEndMs = (
+  rideTimer?: RideTimer | null,
+  endDateTime?: string | null,
+) => parseLagosMs(rideTimer?.bookedEndAt) ?? parseLagosMs(endDateTime);
+
+const resolveLiveRideStatus = (
+  status: DriverTripStatus | undefined,
+  rideTimer: RideTimer | null | undefined,
+  endDateTime: string | null | undefined,
+  nowMs: number,
+): DriverTripStatus | undefined => {
+  if (status === "CANCELLED") {
+    return undefined;
+  }
+
+  if (rideTimer?.actualEndAt) {
+    return "COMPLETE";
+  }
+
+  const rideStarted =
+    (status !== undefined && RIDING.includes(status)) ||
+    (Boolean(rideTimer?.actualStartAt) && status !== "COMPLETE");
+
+  if (!rideStarted) {
+    return undefined;
+  }
+
+  const bookedEndMs = getBookedEndMs(rideTimer, endDateTime);
+
+  if (bookedEndMs === undefined) {
+    return status === "EXTRA_TIME" ? "EXTRA_TIME" : "ONGOING";
+  }
+
+  return nowMs > bookedEndMs ? "EXTRA_TIME" : "ONGOING";
+};
+
+export const getResolvedDriverTripStatus = (
+  trip: DriverTrip,
+  nowMs = Date.now(),
+): DriverTripStatus | undefined => {
+  const driverStatus = getDriverTripStatus(trip);
+
+  if (trip.standardTripStatus === "CANCELLED" || driverStatus === "CANCELLED") {
+    return "CANCELLED";
+  }
+
+  return (
+    resolveLiveRideStatus(driverStatus, trip.rideTimer, trip.endDateTime, nowMs) ??
+    getTerminalDriverTripStatusFromStandardStatus(trip.standardTripStatus) ??
+    driverStatus
+  );
+};
 
 export const getResolvedDriverTripDetailsStatus = (
   tripDetails?: DriverTripDetails,
-) =>
-  tripDetails
-    ? getTerminalDriverTripStatusFromStandardStatus(
-        tripDetails.standardTripStatus,
-      ) ?? tripDetails.driverTripStatus ?? undefined
-    : undefined;
+  nowMs = Date.now(),
+): DriverTripStatus | undefined => {
+  if (!tripDetails) {
+    return undefined;
+  }
+
+  const driverStatus = tripDetails.driverTripStatus ?? undefined;
+
+  if (tripDetails.standardTripStatus === "CANCELLED" || driverStatus === "CANCELLED") {
+    return "CANCELLED";
+  }
+
+  return (
+    resolveLiveRideStatus(driverStatus, tripDetails.rideTimer, tripDetails.endDateTime, nowMs) ??
+    getTerminalDriverTripStatusFromStandardStatus(tripDetails.standardTripStatus) ??
+    driverStatus
+  );
+};
+
+/** The ride is still running past its booked end (paid extensions included). */
+export const isDriverTripInOvertime = (trip: DriverTrip, nowMs = Date.now()) =>
+  getResolvedDriverTripStatus(trip, nowMs) === "EXTRA_TIME";
 
 export const getDriverTripStatusLabel = (status: DriverTripStatus) =>
   STATUS_LABELS[status];
@@ -314,25 +421,145 @@ const getDriverTripCardStatusLabel = (
   return driverStatus ? getDriverTripStatusLabel(driverStatus) : undefined;
 };
 
-export const isDriverTripUpcoming = (trip: DriverTrip) => {
-  const status = getResolvedDriverTripStatus(trip);
-  const startDate = parseDate(trip.startDateTime);
+export type DriverTripTab = "Upcoming" | "Ongoing" | "Completed" | "Cancelled";
 
-  if (!startDate || startDate.getTime() <= Date.now()) {
-    return false;
+/**
+ * Which Trips tab a trip belongs in. A ride that is still going belongs in
+ * Ongoing, overtime included, whatever the clock says.
+ */
+export const getDriverTripTab = (
+  trip: DriverTrip,
+  nowMs = Date.now(),
+): DriverTripTab | undefined => {
+  const status = getResolvedDriverTripStatus(trip, nowMs);
+
+  if (status === "CANCELLED") return "Cancelled";
+  if (status === "COMPLETE") return "Completed";
+  if (status && RIDING.includes(status)) return "Ongoing";
+
+  const startMs = parseLagosMs(trip.startDateTime);
+  const endMs = getBookedEndMs(trip.rideTimer, trip.endDateTime);
+
+  if (!status || PRE_RIDE.includes(status)) {
+    // Never started and its time is over: Completed.
+    if (endMs !== undefined && endMs < nowMs) return "Completed";
+    // Only a trip nobody has acted on yet is still upcoming; a checked-in
+    // or waiting trip is already under way.
+    if ((!status || status === "NOT_STARTED") && startMs !== undefined && startMs > nowMs) {
+      return "Upcoming";
+    }
+    return "Ongoing";
   }
 
-  return !status || status === "NOT_STARTED";
+  return undefined;
 };
 
-export const isDriverTripActive = (trip: DriverTrip) => {
-  const status = getResolvedDriverTripStatus(trip);
+export const isDriverTripUpcoming = (trip: DriverTrip) =>
+  getDriverTripTab(trip) === "Upcoming";
 
-  if (isDriverTripUpcoming(trip)) {
-    return false;
+export const isDriverTripActive = (trip: DriverTrip) =>
+  getDriverTripTab(trip) === "Ongoing";
+
+/* ------------------------------------------------------------- paid extensions */
+
+/**
+ * Time the client has paid to extend the booking. The backend adds paid
+ * extensions to `rideTimer.bookedEndAt` and keeps the booking's own end in
+ * `originalEndAt` (or `endDateTime` on older responses). Unpaid extension
+ * invoices never move `bookedEndAt`, so anything found here is paid.
+ */
+export const getDriverTripExtension = (
+  rideTimer?: RideTimer | null,
+  endDateTime?: string | null,
+): DriverTripExtension | undefined => {
+  const originalEnd = rideTimer?.originalEndAt ?? endDateTime;
+  const originalMs = parseLagosMs(originalEnd);
+  const bookedMs = parseLagosMs(rideTimer?.bookedEndAt);
+
+  if (originalMs === undefined || bookedMs === undefined || bookedMs <= originalMs) {
+    return undefined;
   }
 
-  return !status || ACTIVE_DRIVER_TRIP_STATUSES.includes(status);
+  const minutes = Math.round((bookedMs - originalMs) / 60_000);
+
+  if (minutes <= 0) {
+    return undefined;
+  }
+
+  return {
+    addedLabel: `+${formatMinutes(minutes)}`,
+    extendedEndLabel: formatLagosTime(rideTimer?.bookedEndAt),
+    minutes,
+    originalEndLabel: formatLagosTime(originalEnd),
+  };
+};
+
+/* ------------------------------------------------------------- tab counts */
+
+/** The tab the backend's clock-based statistics count a trip under. */
+const getBackendCountedTab = (trip: DriverTrip, nowMs: number): DriverTripTab | undefined => {
+  // The backend sends more standard statuses than the app's type lists.
+  switch (trip.standardTripStatus as string | null | undefined) {
+    case "CANCELLED":
+      return "Cancelled";
+    case "COMPLETED":
+      return "Completed";
+    case "IN_PROGRESS":
+    case "COMING_TO_AN_END":
+      return "Ongoing";
+    case "UPCOMING": {
+      const startMs = parseLagosMs(trip.startDateTime);
+      return startMs !== undefined && startMs > nowMs ? "Upcoming" : undefined;
+    }
+    default:
+      return undefined;
+  }
+};
+
+const STATISTIC_KEY: Record<DriverTripTab, keyof DriverTripStatistics> = {
+  Upcoming: "upcomingTrips",
+  Ongoing: "onGoingTrips",
+  Completed: "completedTrips",
+  Cancelled: "cancelledTrips",
+};
+
+/**
+ * The backend counts trips by the clock alone, so a ride in overtime is
+ * counted as Completed and one ended early as Ongoing. Using the most recent
+ * trips (where those cases live), move each trip the backend counted under a
+ * different tab to the tab the list actually shows it in.
+ */
+export const reconcileDriverTripStatistics = (
+  statistics: DriverTripStatistics | undefined,
+  recentTrips: DriverTrip[],
+  nowMs = Date.now(),
+): DriverTripStatistics | undefined => {
+  if (!statistics) {
+    return statistics;
+  }
+
+  const next = { ...statistics };
+  const seen = new Set<string>();
+
+  recentTrips.forEach((trip) => {
+    if (seen.has(trip.id)) return;
+    seen.add(trip.id);
+
+    const counted = getBackendCountedTab(trip, nowMs);
+    const shown = getDriverTripTab(trip, nowMs);
+
+    if (!counted || !shown || counted === shown) return;
+
+    const from = STATISTIC_KEY[counted];
+    const to = STATISTIC_KEY[shown];
+
+    if (next[from] > 0) {
+      next[from] -= 1;
+      next[to] += 1;
+    }
+  });
+
+  return next;
 };
 
 export const getDriverTripSectionTitle = (trip: DriverTrip) => {
@@ -429,8 +656,17 @@ export const toDriverTripCardModel = (
     });
   }
 
+  const extension = getDriverTripExtension(trip.rideTimer, trip.endDateTime);
+  const bookedEndLabel = formatLagosTime(trip.rideTimer?.bookedEndAt ?? trip.endDateTime);
+  const overtimeNote =
+    getResolvedDriverTripStatus(trip) === "EXTRA_TIME"
+      ? `Past the booked end${bookedEndLabel ? ` (${bookedEndLabel})` : ""} · ride still on`
+      : undefined;
+
   return {
     badges,
+    extension,
+    overtimeNote,
     clientName: getFallbackValue(compact(trip.customerName), "Customer"),
     id: trip.id,
     location: getFallbackValue(

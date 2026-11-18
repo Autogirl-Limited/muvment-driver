@@ -9,6 +9,7 @@ import {
   setRefreshHandler,
   setUnauthorizedHandler,
 } from "@/lib/api/client";
+import { clearOfflineCache } from "@/lib/offline/queryPersistence";
 import { removePushSubscription } from "@/lib/push/webPush";
 
 /**
@@ -39,7 +40,7 @@ export const SessionTokenSync = () => {
     });
 
     setUnauthorizedHandler(() => {
-      queryClient.clear();
+      void clearOfflineCache(queryClient);
       // The token is gone, so only unsubscribe locally; the backend drops dead endpoints.
       void removePushSubscription({ notifyServer: false });
       void signOut({ callbackUrl: "/login" });
@@ -53,7 +54,7 @@ export const SessionTokenSync = () => {
 
   useEffect(() => {
     if (status === "authenticated" && sessionError === "RefreshFailed") {
-      queryClient.clear();
+      void clearOfflineCache(queryClient);
       void removePushSubscription({ notifyServer: false });
       void signOut({ callbackUrl: "/login" });
     }

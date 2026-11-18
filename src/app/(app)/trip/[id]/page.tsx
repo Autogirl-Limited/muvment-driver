@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { CalendarDays, Car, Clock, Phone, Wallet } from "lucide-react";
+import { CalendarDays, Car, ChevronRight, Clock, Navigation, Phone, Wallet } from "lucide-react";
 
 import { CallSheet } from "@/components/trips/CallSheet";
 import { LocationItem } from "@/components/trips/LocationItem";
@@ -12,7 +12,7 @@ import { BackButton } from "@/components/ui/BackButton";
 import { TripBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Divider, NavBar, Screen, SectionHeader } from "@/components/ui/Screen";
+import { NavBar, Screen, SectionHeader } from "@/components/ui/Screen";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { useTransitionDriverTripStatus } from "@/lib/api/hooks/usePreRideChecklist";
 import { useRideActions, useTripWithQueuedRideActions } from "@/lib/api/hooks/useRideTimer";
@@ -61,7 +61,7 @@ const STATUS_STYLE: Record<string, { banner: string; badge: string }> = {
   "AWAITING PICKUP": { banner: "bg-[#F97316]", badge: "bg-[#F97316]" },
   "RUNNING LATE": { banner: "bg-[#DC2626]", badge: "bg-danger" },
   ONGOING: { banner: "bg-[#0A8F2A]", badge: "bg-success" },
-  "EXTRA TIME": { banner: "bg-[#0A8F2A]", badge: "bg-success" },
+  OVERTIME: { banner: "bg-[#0A8F2A]", badge: "bg-success" },
   COMPLETE: { banner: "bg-text-3", badge: "bg-text-3" },
   CANCELLED: { banner: "bg-[#DC2626]", badge: "bg-danger" },
 };
@@ -270,98 +270,111 @@ export default function TripDetailPage() {
           onEnd={() => void endRide()}
         />
 
-        <SectionHeader>Trip Status</SectionHeader>
-        <span className={`${statusStyle.badge} inline-flex rounded-full px-4 py-1.5 text-[11px] font-semibold tracking-[0.06em] text-white uppercase`}>
-          {autoStarted ? `${statusLabel} (auto-started)` : statusLabel}
-        </span>
-
-        <Divider className="my-4" />
+        <button
+          type="button"
+          onClick={() => openNavigation(isPreRideStatus(status) ? "pickup" : "dropoff")}
+          className="card pressable mb-6 flex w-full items-center gap-3 p-3.5 text-left"
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent-text">
+            <Navigation size={20} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="text-body block font-semibold text-text">Route Map</span>
+            <span className="text-footnote block text-text-3">Live traffic, ETA and both stops</span>
+          </span>
+          <ChevronRight size={18} className="shrink-0 text-text-4" />
+        </button>
 
         <SectionHeader>Trip Timeline</SectionHeader>
-        <TimelineTracker steps={timeline} />
-
-        <Divider className="my-2 mb-4" />
+        <div className="card mb-6 p-4">
+          <span className={`${statusStyle.badge} mb-3 inline-flex rounded-full px-3.5 py-1 text-[11px] font-semibold tracking-[0.06em] text-white uppercase`}>
+            {autoStarted ? `${statusLabel} (auto-started)` : statusLabel}
+          </span>
+          <TimelineTracker steps={timeline} />
+        </div>
 
         <SectionHeader>Client</SectionHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-body font-medium text-text">{compact(details.customerName) ?? "Customer"}</p>
+        <div className="card mb-6 flex items-center justify-between p-4">
+          <div className="min-w-0">
+            <p className="text-body truncate font-semibold text-text">{compact(details.customerName) ?? "Customer"}</p>
             <p className="text-callout mt-0.5 text-text-3">{compact(details.customerPhoneNumber) ?? "Phone unavailable"}</p>
           </div>
           <button
             type="button"
             onClick={() => setCallSheetOpen(true)}
             disabled={!compact(details.customerPhoneNumber)}
-            className="pressable flex h-11 w-11 items-center justify-center rounded-full bg-success-soft text-success disabled:opacity-40"
+            className="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-success-soft text-success disabled:opacity-40"
             aria-label="Call client"
           >
             <Phone size={18} />
           </button>
         </div>
 
-        <Divider className="my-4" />
-
-        <LocationItem
-          title="Pickup Location"
-          address={pickupAddress}
-          mapsUrl={getMapsSearchUrl({
-            address: getLocationAddress(details.pickupLocation),
-            lat: details.pickupLocation?.lat,
-            lng: details.pickupLocation?.lng,
-          })}
-        />
-
-        <Divider className="my-4" />
-
-        <LocationItem
-          title="Drop-Off Location"
-          address={dropOffAddress}
-          mapsUrl={getMapsSearchUrl({
-            address: getLocationAddress(details.dropOffLocation),
-            lat: details.dropOffLocation?.lat,
-            lng: details.dropOffLocation?.lng,
-          })}
-        />
-
-        <Divider className="my-4" />
+        <SectionHeader>Route</SectionHeader>
+        <div className="card mb-1.5 divide-y divide-separator p-0">
+          <div className="p-4">
+            <LocationItem
+              title="Pickup"
+              address={pickupAddress}
+              mapsUrl={getMapsSearchUrl({
+                address: getLocationAddress(details.pickupLocation),
+                lat: details.pickupLocation?.lat,
+                lng: details.pickupLocation?.lng,
+              })}
+            />
+          </div>
+          <div className="p-4">
+            <LocationItem
+              title="Drop-off"
+              address={dropOffAddress}
+              mapsUrl={getMapsSearchUrl({
+                address: getLocationAddress(details.dropOffLocation),
+                lat: details.dropOffLocation?.lat,
+                lng: details.dropOffLocation?.lng,
+              })}
+            />
+          </div>
+        </div>
+        <p className="text-footnote mb-6 ml-4 text-text-3">Tap Open in Maps to see a stop in your maps app.</p>
 
         <SectionHeader>Vehicle</SectionHeader>
-        <div className="flex items-center gap-3">
+        <div className="card mb-6 flex items-center gap-3 p-4">
           <span className="flex h-[46px] w-[46px] items-center justify-center rounded-xl bg-surface-alt text-text-2">
             <Car size={24} />
           </span>
-          <div>
-            <p className="text-body font-medium text-text">{compact(details.vehicleName) ?? "Vehicle unavailable"}</p>
+          <div className="min-w-0">
+            <p className="text-body truncate font-semibold text-text">{compact(details.vehicleName) ?? "Vehicle unavailable"}</p>
             <p className="text-footnote mt-0.5 text-text-3">{compact(details.vehicleIdentifier) ?? "—"}</p>
           </div>
         </div>
 
-        <Divider className="my-4" />
-
         <SectionHeader>Booking</SectionHeader>
-        <div className="mb-4 flex flex-wrap gap-2">
-          {bookingType && <TripBadge label={bookingType} type="owner" />}
-          {rentalType && <TripBadge label={rentalType} type="booking" />}
-        </div>
-        <dl className="space-y-2.5">
-          {[
-            { icon: CalendarDays, label: "Date", value: formatDateLabel(details.startDateTime) },
-            { icon: Clock, label: "Duration", value: formatDurationLabel(details.tripDuration) },
-            { icon: CalendarDays, label: "Schedule", value: formatScheduleLabel(details.startDateTime, details.endDateTime) },
-          ].map(({ icon: Icon, label, value }) => (
-            <div key={label} className="text-callout flex items-center gap-2 text-text-3">
-              <Icon size={15} className="text-text-4" />
-              <dt>{label}:</dt>
-              <dd className="font-medium text-text">{value ?? "—"}</dd>
+        <div className="card mb-6 p-4">
+          {(bookingType || rentalType) && (
+            <div className="mb-4 flex flex-wrap gap-2">
+              {bookingType && <TripBadge label={bookingType} type="owner" />}
+              {rentalType && <TripBadge label={rentalType} type="booking" />}
             </div>
-          ))}
-        </dl>
+          )}
+          <dl className="space-y-3">
+            {[
+              { icon: CalendarDays, label: "Date", value: formatDateLabel(details.startDateTime) },
+              { icon: Clock, label: "Duration", value: formatDurationLabel(details.tripDuration) },
+              { icon: CalendarDays, label: "Schedule", value: formatScheduleLabel(details.startDateTime, details.endDateTime) },
+            ].map(({ icon: Icon, label, value }) => (
+              <div key={label} className="text-callout flex items-center gap-2 text-text-3">
+                <Icon size={15} className="text-text-4" />
+                <dt>{label}</dt>
+                <dd className="ml-auto text-right font-medium text-text">{value ?? "—"}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
 
         {itinerary.length > 0 && (
           <>
-            <Divider className="my-4" />
             <SectionHeader>Itinerary</SectionHeader>
-            <ol className="space-y-3">
+            <ol className="card mb-6 space-y-3 p-4">
               {itinerary.map((item, index) => (
                 <li key={item} className="flex items-start gap-3">
                   <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-surface-alt text-[10px] font-semibold text-text-2">
@@ -387,7 +400,7 @@ export default function TripDetailPage() {
         )}
       </div>
 
-      <CallSheet open={isCallSheetOpen} onClose={() => setCallSheetOpen(false)} phoneNumber={details.customerPhoneNumber} />
+      <CallSheet open={isCallSheetOpen} onClose={() => setCallSheetOpen(false)} phoneNumber={details.customerPhoneNumber} name={compact(details.customerName)} />
       {countdown !== null && <AutoStartCountdown seconds={countdown} />}
 
     </Screen>

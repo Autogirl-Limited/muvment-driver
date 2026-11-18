@@ -32,7 +32,11 @@ export default function ChecklistStep1Page() {
   const vehicleName = summaryVehicle?.vehicleName?.trim() || selectedVehicle?.name || assignedVehicle?.name;
   const vehicleIdentifier =
     summaryVehicle?.vehicleIdentifier?.trim() || selectedVehicle?.identifier || assignedVehicle?.identifier;
-  const vehicleImage = selectedVehicle?.imageUrl ?? assignedVehicle?.imageUrl ?? undefined;
+  const vehicleImage =
+    (activeTrackerId ? summaryVehicle?.vehicleImageUrl?.trim() : undefined) ||
+    selectedVehicle?.imageUrl ||
+    assignedVehicle?.imageUrl ||
+    undefined;
   const hasVehicle = Boolean(vehicleName || vehicleIdentifier);
   const isLoadingVehicle = !hasVehicle && assignedVehicleQuery.isLoading;
   const hasVehicleError = !hasVehicle && assignedVehicleQuery.isError;

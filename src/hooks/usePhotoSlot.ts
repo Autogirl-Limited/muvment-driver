@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getApiErrorMessage } from "@/lib/api/errors";
 import {
@@ -15,19 +15,88 @@ import {
   deleteChecklistPhotoBestEffort,
   uploadChecklistPhoto,
 } from "@/lib/utils/mediaUpload";
+import { storage } from "@/lib/utils/storage";
 import { useToast } from "@/providers/ToastProvider";
+
+/* ---------------------------------------------------------------- saved photos */
+
+/**
+ * Photos already uploaded for a report that hasn't been sent are remembered on
+ * this phone (just their addresses), so leaving the screen, or the app, never
+ * loses them. Cleared once the step is submitted.
+ */
+const DRAFT_PREFIX = "photo-draft:";
+
+interface SavedPhoto {
+  fileUrl: string;
+  publicCloudID?: string;
+}
+
+const toSaved = (photo: ChecklistPhotoState): SavedPhoto | undefined =>
+  isChecklistPhotoUploaded(photo) ? { fileUrl: photo.fileUrl, publicCloudID: photo.publicCloudID } : undefined;
+
+const fromSaved = (saved: SavedPhoto): ChecklistPhotoState => ({
+  fileUrl: saved.fileUrl,
+  localUri: saved.fileUrl,
+  publicCloudID: saved.publicCloudID ?? saved.fileUrl,
+  status: "uploaded",
+});
+
+const readSaved = <T,>(key: string): T | undefined => {
+  try {
+    const raw = storage.get(DRAFT_PREFIX + key);
+    return raw ? (JSON.parse(raw) as T) : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+export const clearPhotoDraft = (key?: string) => {
+  if (key) storage.remove(DRAFT_PREFIX + key);
+};
 
 /**
  * Shared capture → upload → retry/remove state machine for every checklist
  * photo. Each slot keeps the captured File so a failed upload can be retried
  * without re-opening the camera (same behaviour as the native app).
  */
-export const usePhotoSlots = <TKey extends string>(keys: readonly TKey[]) => {
+export const usePhotoSlots = <TKey extends string>(keys: readonly TKey[], persistKey?: string) => {
   const toast = useToast();
   const [photos, setPhotos] = useState<Record<TKey, ChecklistPhotoState>>(
     () => Object.fromEntries(keys.map((key) => [key, createEmptyChecklistPhoto()])) as Record<TKey, ChecklistPhotoState>,
   );
   const files = useRef(new Map<TKey, File>());
+  const hydratedKey = useRef<string | undefined>(undefined);
+
+  // Bring back photos saved for this report, once.
+  useEffect(() => {
+    if (!persistKey || hydratedKey.current === persistKey) return;
+    hydratedKey.current = persistKey;
+    const saved = readSaved<Partial<Record<TKey, SavedPhoto>>>(persistKey);
+
+    if (!saved) return;
+    setPhotos((current) => {
+      const next = { ...current };
+      (Object.keys(saved) as TKey[]).forEach((key) => {
+        const entry = saved[key];
+        if (entry && key in next && next[key].status === "empty") next[key] = fromSaved(entry);
+      });
+      return next;
+    });
+  }, [persistKey]);
+
+  // Remember what is uploaded.
+  useEffect(() => {
+    if (!persistKey || hydratedKey.current !== persistKey) return;
+    const out: Partial<Record<TKey, SavedPhoto>> = {};
+    (Object.keys(photos) as TKey[]).forEach((key) => {
+      const saved = toSaved(photos[key]);
+      if (saved) out[key] = saved;
+    });
+
+    if (Object.keys(out).length === 0) storage.remove(DRAFT_PREFIX + persistKey);
+    else storage.set(DRAFT_PREFIX + persistKey, JSON.stringify(out));
+  }, [persistKey, photos]);
 
   const update = useCallback((key: TKey, next: ChecklistPhotoState) => {
     setPhotos((current) => ({ ...current, [key]: next }));
@@ -131,10 +200,27 @@ export const usePhotoSlots = <TKey extends string>(keys: readonly TKey[]) => {
 };
 
 /** Variable-length list of optional photos (damage close-ups). */
-export const usePhotoList = (max: number) => {
+export const usePhotoList = (max: number, persistKey?: string) => {
   const toast = useToast();
   const [photos, setPhotos] = useState<ChecklistPhotoState[]>([]);
   const files = useRef<(File | undefined)[]>([]);
+  const hydratedKey = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!persistKey || hydratedKey.current === persistKey) return;
+    hydratedKey.current = persistKey;
+    const saved = readSaved<SavedPhoto[]>(persistKey);
+
+    if (saved?.length) setPhotos((current) => (current.length === 0 ? saved.slice(0, max).map(fromSaved) : current));
+  }, [max, persistKey]);
+
+  useEffect(() => {
+    if (!persistKey || hydratedKey.current !== persistKey) return;
+    const out = photos.map(toSaved).filter((entry): entry is SavedPhoto => Boolean(entry));
+
+    if (out.length === 0) storage.remove(DRAFT_PREFIX + persistKey);
+    else storage.set(DRAFT_PREFIX + persistKey, JSON.stringify(out));
+  }, [persistKey, photos]);
 
   const setAt = (index: number, next: ChecklistPhotoState) => {
     setPhotos((current) => current.map((photo, i) => (i === index ? next : photo)));

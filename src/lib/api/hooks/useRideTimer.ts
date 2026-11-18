@@ -6,6 +6,7 @@ import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-quer
 import { useToast } from "@/providers/ToastProvider";
 
 import { apiFetchClient } from "../client";
+import { CHECKLIST_TRACKERS_QUERY_KEY, TODAY_CHECKLIST_QUERY_KEY } from "./usePreRideChecklist";
 import type {
   DriverScheduleResponse,
   DriverTripDetails,
@@ -162,6 +163,9 @@ export const invalidateAfterRideOutcomes = (queryClient: QueryClient, outcomes: 
     void queryClient.invalidateQueries({ queryKey: ["driver-trips"] });
     void queryClient.invalidateQueries({ queryKey: ["driver-trip-statistics"] });
     void queryClient.invalidateQueries({ queryKey: ["driver-payments"] });
+    // A ride ending or starting moves the day on: refresh the checklist state (post-ride report).
+    void queryClient.invalidateQueries({ queryKey: CHECKLIST_TRACKERS_QUERY_KEY });
+    void queryClient.invalidateQueries({ queryKey: TODAY_CHECKLIST_QUERY_KEY });
   }
 };
 

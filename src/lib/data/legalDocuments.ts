@@ -1,98 +1,176 @@
-export const privacyPolicyDocument = {
-  body: `Muvment Privacy Policy
-Operated by Autogirl Limited | muvment.ng
-Last updated: March 31, 2026
+/** The icons the legal screens use; the screen maps each name to a drawing. */
+export type LegalIcon = "banknote" | "checklist" | "invoice" | "locationFill" | "lockFill" | "personCheck" | "privacy" | "shieldCheck" | "warning";
 
-1. Who we are
-Muvment is a vehicle mobility marketplace operated by Autogirl Limited ("Muvment", "we", "us", or "our"). We connect customers with vehicles and professional drivers for hire across our service areas, currently including Lagos, Abuja, Benin City, Enugu, and Port Harcourt in Nigeria, and Accra in Ghana.
-This policy explains what personal information we collect, why we collect it, how we use and share it, and the choices and rights you have. If you have questions, contact us at info@muvment.ng or at 10 Anuoluwapo Close, Opebi, Ikeja, Lagos.
+export interface LegalDocument {
+  /** Full legal text. Numbered lines ("1. Title", "2.1 Title") become headings; "- " lines become bullets. */
+  body: string;
+  title: string;
+  /** Shown in the navigation bar once the big title scrolls away. */
+  shortTitle: string;
+  /** One or two plain sentences under the title. */
+  intro: string;
+  icon: LegalIcon;
+  tint: string;
+  details: { label: string; value: string }[];
+  /** Plain-language key points. Must not add anything the full text does not say. */
+  summary: { icon: LegalIcon; tint: string; title: string; body: string }[];
+  /** Closing line under the document. */
+  agreement: string;
+}
+
+export const privacyPolicyDocument: LegalDocument = {
+  body: `Muvment Driver Privacy Policy
+Operated by Autogirl Limited | muvment.ng
+Last updated: November 17, 2026
+
+1. About this policy
+This policy explains how Autogirl Limited, which operates Muvment ("Muvment", "we", "us", or "our"), collects, uses, shares, and protects personal information about you as a driver using the Muvment driver app. It applies to the app and to the records we create through it.
+Muvment is the controller of your personal information for the purposes of the Nigeria Data Protection Act 2023 ("NDPA"). This policy sits alongside your engagement agreement, the driver handbook, and the Muvment driver Terms of Use. Customers who book with Muvment are covered by a separate customer privacy policy.
 
 2. Information we collect
-2.1 Information you give us
-- Account details: your name, email address, phone number, and password when you create an account.
-- Booking details: pickup and drop-off locations, the areas you plan to travel to, trip dates and times, and any notes you add to a booking.
-- Guest booking details: if you book without an account, we still collect the contact and trip details needed to fulfil and support your booking.
-- Business account details: your company name, role, team members you invite, and related billing information.
-- Payment details: payments are processed by our payment partners (Paystack and Monnify). We receive confirmation of payment and limited transaction details, but we do not store your full card details on our own systems.
-- Communications: messages you send us through support, email, chat, or social channels.
+2.1 Information you or Muvment provide
+- Account details: your name, phone number, email address, and the login details for the account our operations team creates for you.
+- Profile and engagement details: your driver status, the vehicle assigned to you, and other records connected with your engagement with Muvment.
+- Bank details: the bank account you add so that approved payments can be made to you.
+- Messages: what you send to our operations or support teams, including problem reports.
+2.2 Information created while you work
+- Trip records: the trips assigned to you, their status, start and end times, and trip history.
+- Inspection records: the pre-ride and post-ride checklists you complete, including vehicle photos, odometer readings, fuel levels, and any notes.
+- Driver selfies: the photo you take at the start of a trip so we can confirm who is operating the vehicle.
+- Work hours and payment requests: the time you work, any extra hours, and the payment or allowance requests you submit, including receipts and their review status.
+2.3 Location information
+- Live location: while you are signed in to the app, it collects your device's precise location, including when the app is closed or in the background. This includes your position, direction, speed, and the accuracy of each reading.
+- Photo location: the location where each inspection photo is taken is recorded with that photo.
+- How location sharing works is explained in section 3.
+2.4 Information from your device
+- Device and app details: your device type, operating system, app version, and the notification token used to send you alerts.
+- Permissions: whether you have allowed camera, location, and notification access, so the app can tell you when something it needs is turned off.
+- Diagnostics: technical information about errors and connection problems, used to keep the app working.
+2.5 Information from others
+- Muvment staff and administrators: trip assignments, review decisions on your requests, and operational notes.
+- Customers: feedback or complaints about a trip you drove.
 
-2.2 Information we collect automatically
-- Location information: the pickup, drop-off, and areas of use you enter for a booking, and, where you allow it, your device location to help you set an accurate pickup point.
-- Device and usage information: your IP address, browser type, device type, pages viewed, and how you interact with the site, collected through analytics tools.
-- Cookies and similar technologies: used to keep you signed in, remember preferences, measure performance, and understand how the service is used. See section 8.
+3. How location sharing works
+Location is central to how the app works, so we want to be clear about it.
+- While you are signed in, the app shares your location with Muvment, including in the background. On Android, a notification is shown while this is happening.
+- During an active trip, your live location is shown to the passenger on their trip map so they can follow their ride.
+- If you lose your connection, the app keeps your most recent readings on your phone and sends them when you are back online.
+- To stop location sharing, sign out of the app. You can also turn off location access in your phone's settings, but you may not be able to receive or complete trips without it.
 
-2.3 Information from others
-- Our vehicle hosts and drivers may provide information related to your trip, such as trip status and completion.
-- Our payment and verification partners may share confirmation of payment or identity checks.
-
-3. How we use your information
+4. How we use your information
 We use your information to:
-- Create and manage your account, and let you book as a guest.
-- Take bookings, calculate pricing based on the locations and areas you provide, assign vehicles and drivers, and fulfil your trip.
-- Process payments and send receipts, invoices, and booking confirmations.
-- Provide customer support and respond to your requests.
-- Keep the service safe, prevent fraud and misuse, and enforce our terms.
-- Send you service messages about your bookings, and, where you have agreed, marketing messages such as our newsletter. You can opt out of marketing at any time.
-- Understand and improve how the service performs, using analytics.
-- Meet our legal and regulatory obligations.
+- Create and manage your driver account.
+- Assign trips to you, guide you to pickups, and show passengers where their driver is.
+- Record the condition of each vehicle at every handover, and resolve damage or other disputes.
+- Confirm who is driving a vehicle, and keep drivers, passengers, and vehicles safe.
+- Track work hours, review payment and allowance requests, and pay you.
+- Send you trip alerts, updates, and other service messages.
+- Apply the driver handbook, the Terms of Use, and your engagement agreement, including investigating complaints and incidents.
+- Fix problems, keep the app secure, and improve how it works.
+- Meet our legal, tax, insurance, and regulatory obligations.
 
-4. The legal grounds we rely on
-Under the Nigeria Data Protection Act 2023 and related regulations, we process your personal data on one or more of these grounds:
-- Performance of a contract: to provide the bookings and services you request.
-- Your consent: for optional activities such as marketing messages and, where required, certain cookies. You may withdraw consent at any time.
-- Our legitimate interests: to run, secure, and improve our service, so long as your rights do not override those interests.
-- Legal obligation: to comply with laws that apply to us.
+5. Automated checks on photos
+When you upload an inspection photo, our systems analyse it automatically to help read odometer and fuel gauges, spot visible damage, and check that the photo is clear and complete. The results are added to the inspection record and help our operations team review the condition of the vehicle.
+Under the NDPA, you have the right not to be subject to a decision based solely on automated processing that significantly affects you. If you disagree with an automated result, contact us and we will review it.
 
-5. How we share your information
+6. The legal grounds we rely on
+Under the NDPA, we process your personal information on one or more of these grounds:
+- Contract: to manage your engagement with Muvment, assign trips, and pay you.
+- Legitimate interests: to run a safe and reliable service, protect vehicles and customers, prevent fraud, and resolve disputes, so long as your rights do not override those interests.
+- Legal obligation: to comply with laws that apply to us, such as tax and employment requirements, and lawful requests from authorities.
+- Consent: where the law requires it, for example for background location access on your device. You can withdraw consent at any time, though some features may stop working.
+
+7. Who can see your information
 We do not sell your personal information. We share it only as needed to run the service:
-- Vehicle hosts and drivers: the trip details needed to carry out your booking.
-- Payment partners: Paystack and Monnify, to process your payments securely.
-- Service providers: companies that help us operate, such as hosting, email delivery, analytics, and customer support tools, acting on our instructions.
-- Business account administrators: if you book under a company account, your bookings and trip details may be visible to that company's administrators.
-- Legal and safety: authorities or others where we are required by law, or where it is necessary to protect the rights, safety, or property of Muvment, our users, or the public.
+- Passengers: during a trip, the details that identify you as their driver, such as your name and the vehicle details, and your live location.
+- Muvment staff: our operations, support, and finance teams, who need it to manage trips, inspections, and payments.
+- Service providers: companies that help us operate, such as hosting, maps and routing (including Google Maps), push notifications and app updates (Expo), and image analysis, acting on our instructions.
+- Banks and payment providers: to make approved payments to you.
+- Insurers and advisers: where needed for claims, audits, or legal advice.
+- Authorities: where we are required by law, or where it is necessary to protect the rights, safety, or property of Muvment, drivers, customers, or the public.
 - Business transfers: in connection with a merger, acquisition, or sale of assets, subject to this policy.
 
-6. Payments
-Payments are handled by our payment partners, Paystack and Monnify. When you pay, you are also subject to their terms and privacy practices. We receive confirmation of your payment and limited details needed to manage your booking, but your full card information is handled by the payment partner, not stored on our own systems.
+8. International transfers
+Some of our service providers store or process information outside Nigeria. Where we transfer personal information across borders, we take steps to protect it in line with the NDPA, for example by using providers that offer an adequate level of protection or appropriate safeguards.
 
-7. International transfers
-Some of the providers we use may store or process information outside your country, including outside Nigeria or Ghana. Where we transfer personal data across borders, we take steps to ensure it is protected in line with the Nigeria Data Protection Act 2023 and applicable law, for example by using providers that offer an adequate level of protection or appropriate safeguards.
+9. Information stored on your phone
+To keep working without a connection, the app saves some information on your device, such as your sign-in session, recent trips and account details, and location readings waiting to be sent. Your sign-in details are kept in your phone's secure storage. Signing out removes your session from the device.
 
-8. Cookies and analytics
-We use cookies and similar technologies to keep you signed in, remember your preferences, and understand how the service is used. We use analytics tools, which may include Microsoft Clarity, Google Analytics, and the Meta Pixel, to measure performance and improve the experience. These tools may set their own cookies and collect usage data as described in their own policies. You can control cookies through your browser settings, though some features may not work correctly without them.
-
-9. How long we keep your information
-We keep personal information for as long as needed to provide the service, support your bookings, meet legal, tax, and accounting requirements, resolve disputes, and enforce our agreements. When we no longer need it, we delete it or make it anonymous. Specific retention periods are set out in our internal retention schedule [confirm periods with legal].
-
-10. Your rights
-Subject to applicable law, including the Nigeria Data Protection Act 2023, you have the right to:
-- Access the personal data we hold about you.
-- Ask us to correct information that is wrong or incomplete.
-- Ask us to delete your information, where the law allows.
-- Object to or ask us to restrict certain processing.
-- Withdraw consent where we rely on it, for example for marketing.
-- Ask for a copy of certain information in a portable format.
-- Lodge a complaint with the Nigeria Data Protection Commission, or the relevant authority in your country.
-To exercise any of these rights, contact us at info@muvment.ng. We will respond within the time required by law.
+10. How long we keep your information
+We keep personal information only for as long as we need it for the purposes in this policy. Trip, inspection, and payment records are kept for as long as needed to run the service, resolve disputes and claims, and meet our legal, tax, and accounting obligations, including after your engagement with Muvment ends. When we no longer need information, we delete it or make it anonymous.
 
 11. How we protect your information
-We use reasonable technical and organisational measures to protect your information, including encrypted connections, access controls, and authenticated sign-in. No method of transmission or storage is completely secure, so we cannot guarantee absolute security, but we work to protect your information and to respond appropriately if a problem occurs.
+We use reasonable technical and organisational measures to protect your information, including encrypted connections, access controls, secure storage of sign-in details, and limiting access to staff who need it. No method of transmission or storage is completely secure, so we cannot guarantee absolute security, but we work to protect your information and to respond appropriately if a problem occurs.
 
-12. Children
-Muvment is not intended for children under 18. We do not knowingly collect personal information from children. If you believe a child has provided us information, contact us and we will take appropriate steps to remove it.
+12. Your rights
+Subject to the NDPA and other applicable law, you have the right to:
+- Be told how we use your personal information, as set out in this policy.
+- Access the personal information we hold about you.
+- Ask us to correct information that is wrong or incomplete.
+- Ask us to delete your information, or your account, where the law allows. Some records must be kept, as explained in section 10.
+- Object to or ask us to restrict certain processing.
+- Withdraw consent where we rely on it.
+- Ask for a copy of certain information in a portable format.
+- Not be subject to a decision based solely on automated processing that significantly affects you.
+- Lodge a complaint with the Nigeria Data Protection Commission.
+To exercise any of these rights, contact us at info@muvment.ng. We may need to confirm your identity first, and we will respond within the time required by law.
 
-13. Changes to this policy
-We may update this policy from time to time. When we make material changes, we will update the date at the top and, where appropriate, notify you. Your continued use of the service after an update means you accept the revised policy.
+13. Your choices
+- Location: sign out to stop location sharing, or change location access in your phone's settings.
+- Camera: you can turn off camera access in your phone's settings, but you will not be able to complete inspections without it.
+- Notifications: you can turn trip alerts on or off in the app's settings or your phone's settings.
+- Your details: your name, contact details, and bank details are managed by Muvment. Contact the operations team to correct them.
 
-14. Contact us
+14. Changes to this policy
+We may update this policy as the app, our practices, or the law change. When we make material changes, we will update the date at the top and, where appropriate, notify you in the app. If you continue to use the app after an update, the revised policy will apply.
+
+15. Contact us
 Autogirl Limited (Muvment)
 Email: info@muvment.ng
 Address: 10 Anuoluwapo Close, Opebi, Ikeja, Lagos
 Phone: +234 816 747 4165`,
-  title: "Privacy Policy",
+  title: "Driver Privacy Policy",
+  shortTitle: "Privacy Policy",
+  intro: "What Muvment collects about you as a driver, including your location and inspection photos, why we need it, and the rights you have over it.",
+  icon: "privacy",
+  tint: "#5856D6",
+  details: [
+    { label: "Last updated", value: "November 17, 2026" },
+    { label: "Issued by", value: "Autogirl Limited" },
+    { label: "Applies to", value: "Muvment drivers" },
+    { label: "Regulated under", value: "NDPA 2023" },
+  ],
+  summary: [
+    {
+      icon: "locationFill",
+      tint: "#007AFF",
+      title: "Location is shared while you're signed in",
+      body: "Including in the background. Passengers see your live location during their trip. Sign out to stop sharing.",
+    },
+    {
+      icon: "checklist",
+      tint: "#34C759",
+      title: "Your photos are the inspection record",
+      body: "Vehicle photos and selfies are tagged with their location and checked automatically. You can ask us to review any result.",
+    },
+    {
+      icon: "shieldCheck",
+      tint: "#FF9500",
+      title: "We never sell your data",
+      body: "We share it only to run the service, such as with passengers during a trip, our service providers, and banks that pay you.",
+    },
+    {
+      icon: "personCheck",
+      tint: "#5856D6",
+      title: "You stay in control",
+      body: "You can ask to access, correct, delete or export your data, and complain to the Nigeria Data Protection Commission.",
+    },
+  ],
+  agreement:
+    "This policy is issued under the Nigeria Data Protection Act 2023. To exercise your rights or ask a question, email info@muvment.ng.",
 };
 
-export const termsOfUseDocument = {
+export const termsOfUseDocument: LegalDocument = {
   body: `Employee Terms of Use
 Last updated: August 2026
 
@@ -179,4 +257,42 @@ We may update these terms from time to time as the app, our policies, or the law
 18. Contact us
 If you have questions about these terms, contact us at support@muvment.ng, or reach out to the Muvment operations team through the channels provided to you.`,
   title: "Employee Terms of Use",
+  shortTitle: "Terms of Use",
+  intro: "The rules for using the Muvment driver app. They sit alongside your engagement agreement and the driver handbook.",
+  icon: "invoice",
+  tint: "#007AFF",
+  details: [
+    { label: "Last updated", value: "August 2026" },
+    { label: "Issued by", value: "Autogirl Limited" },
+    { label: "Applies to", value: "Muvment drivers" },
+    { label: "Governing law", value: "Nigeria" },
+  ],
+  summary: [
+    {
+      icon: "checklist",
+      tint: "#34C759",
+      title: "Your checklists are the official record",
+      body: "Complete every inspection honestly. The photos, odometer and fuel readings you submit document each handover.",
+    },
+    {
+      icon: "lockFill",
+      tint: "#5856D6",
+      title: "Clients' privacy comes first",
+      body: "Anything you see or hear about a client is strictly confidential, during and after your engagement.",
+    },
+    {
+      icon: "banknote",
+      tint: "#FF9500",
+      title: "Requests are reviewed before payment",
+      body: "Payment requests go through review and are paid in line with Muvment policy. False or inflated requests are a breach.",
+    },
+    {
+      icon: "warning",
+      tint: "#FF3B30",
+      title: "Breaches have consequences",
+      body: "Prohibited conduct can lead to queries, penalties or termination under the three-strike policy.",
+    },
+  ],
+  agreement:
+    "By logging in and using the Muvment driver app, you agree to these terms and to the driver handbook.",
 };

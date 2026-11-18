@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarDays, Car, ChevronRight, ClipboardList, Flag, ReceiptText, RefreshCw } from "lucide-react";
 
-import { Avatar } from "@/components/layout/Avatar";
+import { BrandAvatar } from "@/components/brand/BrandAvatar";
 import { NotificationBellButton } from "@/components/notifications/NotificationBellButton";
 import { StatCard } from "@/components/trips/StatCard";
 import { TripCard } from "@/components/trips/TripCard";
@@ -16,10 +16,11 @@ import { getApiErrorMessage } from "@/lib/api/errors";
 import { useTodayChecklist } from "@/lib/api/hooks/usePreRideChecklist";
 import { useDriverTripStatistics, useDriverTrips } from "@/lib/api/hooks/useTrips";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
-import { getPreRideStarterStepRoute } from "@/lib/utils/checklistNavigation";
+import { ReportContinueCard } from "@/components/checklist/ReportContinueCard";
 import { clearChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
-import { toDriverTripCardModel } from "@/lib/utils/driverTrips";
-import { getUserDisplayName, getUserInitials } from "@/lib/utils/userProfile";
+import { getDriverTripTab, toDriverTripCardModel } from "@/lib/utils/driverTrips";
+import { parseLagosMs, toLagosDate } from "@/lib/utils/lagosTime";
+import { getUserDisplayName } from "@/lib/utils/userProfile";
 import { useScreenThemeColor } from "@/providers/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
 
@@ -33,7 +34,13 @@ export default function HomePage() {
   useScreenThemeColor(HOME_HEADER_TOP_COLOR);
   const currentUserQuery = useCurrentUser();
   const driverTripStatisticsQuery = useDriverTripStatistics();
-  const driverTripsQuery = useDriverTrips({ page: 0, size: 20 });
+  // Today's trips only, by the Lagos calendar day the API uses. The key
+  // changes at midnight, so the list rolls over on the next render.
+  const today = toLagosDate(new Date());
+  const driverTripsQuery = useDriverTrips({ endDate: today, page: 0, size: 50, startDate: today });
+  // A ride that started on an earlier day but is still going (overnight, or in
+  // overtime past midnight) stays on Home until the driver ends it.
+  const recentTripsQuery = useDriverTrips({ page: 0, size: 20 });
   const todayChecklistQuery = useTodayChecklist();
 
   const hour = new Date().getHours();
@@ -45,7 +52,37 @@ export default function HomePage() {
     year: "numeric",
   }).format(new Date());
 
-  const driverTrips = driverTripsQuery.data?.data.content ?? [];
+  const driverTripsContent = driverTripsQuery.data?.data.content;
+  const recentTripsContent = recentTripsQuery.data?.data.content;
+  const homeTrips = useMemo(() => {
+    const todayTrips = driverTripsContent ?? [];
+    const carriedOver = (recentTripsContent ?? []).filter(
+      (trip) =>
+        !todayTrips.some((todayTrip) => todayTrip.id === trip.id) &&
+        getDriverTripTab(trip) === "Ongoing" &&
+        (trip.startDateTime ?? "").slice(0, 10) < today,
+    );
+
+    return [...carriedOver, ...todayTrips].sort(
+      (a, b) => (parseLagosMs(a.startDateTime) ?? 0) - (parseLagosMs(b.startDateTime) ?? 0),
+    );
+  }, [driverTripsContent, recentTripsContent, today]);
+  const hasLiveRide = homeTrips.some((trip) => getDriverTripTab(trip) === "Ongoing");
+  const [, setMinuteTick] = useState(0);
+  const { refetch: refetchTodayTrips } = driverTripsQuery;
+
+  // While a ride is live, re-check each minute so it turns to Overtime on time
+  // and picks up a paid extension even if a notification was missed.
+  useEffect(() => {
+    if (!hasLiveRide) return;
+    const timer = setInterval(() => {
+      setMinuteTick((tick) => tick + 1);
+      void refetchTodayTrips();
+    }, 60_000);
+
+    return () => clearInterval(timer);
+  }, [hasLiveRide, refetchTodayTrips]);
+
   const todayChecklist = todayChecklistQuery.data?.data;
   const todayChecklistState = todayChecklist?.state ?? todayChecklist?.status;
   const todayChecklistTrackerId = todayChecklist?.checklistTrackerId?.trim();
@@ -53,12 +90,11 @@ export default function HomePage() {
     todayChecklistState === "NOT_STARTED" || todayChecklistState === "PRE_TRIP_IN_PROGRESS";
   const shouldShowPostRidePilotReport =
     todayChecklistState === "PRE_TRIP_COMPLETED" || todayChecklistState === "POST_TRIP_IN_PROGRESS";
-  const recentTrips = driverTrips.slice(0, 3).map((trip) => toDriverTripCardModel(trip));
+  const todayTrips = homeTrips.map((trip) => toDriverTripCardModel(trip));
   const tripStatistics = driverTripStatisticsQuery.data?.data;
   const tripsErrorMessage = getApiErrorMessage(driverTripsQuery.error);
   const currentUser = currentUserQuery.data?.data;
   const driverName = currentUserQuery.isLoading ? "Loading..." : getUserDisplayName(currentUser);
-  const driverInitials = getUserInitials(currentUser);
 
   const getStatisticValue = (value?: number) => {
     if (driverTripStatisticsQuery.isLoading) return "...";
@@ -70,10 +106,11 @@ export default function HomePage() {
   const refresh = useCallback(async () => {
     await Promise.all([
       driverTripsQuery.refetch(),
+      recentTripsQuery.refetch(),
       todayChecklistQuery.refetch(),
       driverTripStatisticsQuery.refetch(),
     ]);
-  }, [driverTripStatisticsQuery, driverTripsQuery, todayChecklistQuery]);
+  }, [driverTripStatisticsQuery, driverTripsQuery, recentTripsQuery, todayChecklistQuery]);
   const pull = usePullToRefresh(refresh);
 
   const handleMissingTracker = async () => {
@@ -95,20 +132,20 @@ export default function HomePage() {
 
     try {
       if (todayChecklistTrackerId) {
-        router.push(`/checklist/step1?trackerId=${encodeURIComponent(todayChecklistTrackerId)}`);
+        router.push(`/checklist/intro?trackerId=${encodeURIComponent(todayChecklistTrackerId)}`);
         return;
       }
 
       if (todayChecklistState !== "NOT_STARTED") {
         const trackerId = await handleMissingTracker();
         if (trackerId) {
-          router.push(`/checklist/step1?trackerId=${encodeURIComponent(trackerId)}`);
+          router.push(`/checklist/intro?trackerId=${encodeURIComponent(trackerId)}`);
         }
         return;
       }
 
       clearChecklistVehicleSelection(currentUser?.userId);
-      router.push(getPreRideStarterStepRoute(1));
+      router.push("/checklist/intro");
     } finally {
       setIsOpeningPilotReport(false);
     }
@@ -123,7 +160,7 @@ export default function HomePage() {
       const trackerId = todayChecklistTrackerId ?? await handleMissingTracker();
 
       if (trackerId) {
-        router.push(`/post-ride-checklist/step1?trackerId=${encodeURIComponent(trackerId)}`);
+        router.push(`/checklist/intro?flow=postRide&trackerId=${encodeURIComponent(trackerId)}`);
       }
     } finally {
       setIsOpeningPilotReport(false);
@@ -146,7 +183,7 @@ export default function HomePage() {
           </div>
           <div className="mt-1 flex items-center gap-3">
             <NotificationBellButton inverse />
-            <Avatar initials={driverInitials} href="/profile" inverse />
+            <BrandAvatar gapColor="#516C9F" />
           </div>
         </div>
       </header>
@@ -187,7 +224,11 @@ export default function HomePage() {
 
       {(shouldShowPreRidePilotReport || shouldShowPostRidePilotReport) && (
         <div className="mb-5 space-y-3 px-5">
-          {shouldShowPreRidePilotReport && (
+          {todayChecklistState === "PRE_TRIP_IN_PROGRESS" && todayChecklistTrackerId && (
+            <ReportContinueCard trackerId={todayChecklistTrackerId} />
+          )}
+
+          {shouldShowPreRidePilotReport && !(todayChecklistState === "PRE_TRIP_IN_PROGRESS" && todayChecklistTrackerId) && (
             <button
               type="button"
               onClick={() => void openPreRideReport()}
@@ -231,16 +272,17 @@ export default function HomePage() {
               type="button"
               onClick={() => void openPostRideReport()}
               disabled={isOpeningPilotReport}
-              className="pressable flex w-full items-center gap-3 rounded-[20px] bg-navy p-4 text-left shadow-card disabled:cursor-wait disabled:opacity-70"
+              className="card pressable flex w-full items-center gap-3 p-4 text-left disabled:cursor-wait disabled:opacity-70"
             >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 text-white">
+              {/* Amber, so the end-of-day report reads apart from the morning one. */}
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-warning-soft text-warning-text">
                 <Flag size={20} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="text-body block font-semibold text-white">Done for the day?</span>
-                <span className="text-footnote block text-white/70">Submit your Post Ride Pilot Report.</span>
+                <span className="text-body block font-semibold text-text">Done for the day?</span>
+                <span className="text-footnote block text-text-3">Submit your Post Ride Pilot Report.</span>
               </span>
-              <ChevronRight size={20} className="text-white" />
+              <ChevronRight size={20} className="text-text-4" />
             </button>
           )}
         </div>
@@ -257,17 +299,17 @@ export default function HomePage() {
             title="Unable to load trips"
             description={tripsErrorMessage ?? "Please check your connection and try again."}
           />
-        ) : recentTrips.length > 0 ? (
+        ) : todayTrips.length > 0 ? (
           <>
-            <p className="text-eyebrow mb-3 text-text-3">Recent trips</p>
-            {recentTrips.map((trip) => (
+            <p className="text-eyebrow mb-3 text-text-3">Today&apos;s trips</p>
+            {todayTrips.map((trip) => (
               <TripCard key={trip.id} {...trip} onClick={() => router.push(`/trip/${encodeURIComponent(trip.id)}`)} />
             ))}
           </>
         ) : (
           <EmptyState
-            title="No trips scheduled"
-            description="You don't have any upcoming trips. New assignments will appear here once assigned."
+            title="No trips today"
+            description="You have no trips scheduled for today. New assignments for today will appear here."
           />
         )}
       </div>

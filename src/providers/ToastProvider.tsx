@@ -19,10 +19,13 @@ export interface ToastOptions {
   title: string;
   message?: string;
   durationMs?: number;
+  /** Tapping the banner runs this (e.g. open the trip), then dismisses it. */
+  onPress?: () => void;
 }
 
-interface ToastItem extends Required<Omit<ToastOptions, "message">> {
+interface ToastItem extends Required<Omit<ToastOptions, "message" | "onPress">> {
   id: number;
+  onPress?: () => void;
   message?: string;
   leaving: boolean;
 }
@@ -87,12 +90,13 @@ const ToastBanner = ({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: n
           return;
         }
         if (Math.abs(delta) < 6) {
+          toast.onPress?.();
           onDismiss(toast.id);
           return;
         }
         setDragY(0);
       }}
-      className={`glass pointer-events-auto flex w-full items-start gap-3 rounded-[18px] px-4 py-3 shadow-float ${
+      className={`glass pointer-events-auto flex w-full items-start gap-3 rounded-[18px] px-4 py-3 shadow-float ${toast.onPress ? "cursor-pointer" : ""} ${
         toast.leaving ? "" : "anim-slide-down-in"
       }`}
       style={{
@@ -138,11 +142,11 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const show = useCallback(
-    ({ type = "info", title, message, durationMs }: ToastOptions) => {
+    ({ type = "info", title, message, durationMs, onPress }: ToastOptions) => {
       const id = ++toastSequence;
       const duration = durationMs ?? (type === "error" ? 5000 : 3200);
 
-      setToasts((current) => [...current.slice(-1), { id, type, title, message, durationMs: duration, leaving: false }]);
+      setToasts((current) => [...current.slice(-1), { id, type, title, message, durationMs: duration, onPress, leaving: false }]);
       timers.current.set(
         id,
         setTimeout(() => dismiss(id), duration),
