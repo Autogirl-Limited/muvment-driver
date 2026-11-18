@@ -85,6 +85,7 @@ export default function PostRideStep4Page() {
     <>
       <ChecklistShell
         currentStep={4}
+        stepLabels={["Vehicle", "Exterior", "Interior", "Submit"]}
         title="Review Report"
         onStepPress={(step) =>
           router.replace(getGuardedChecklistStepRoute({ aggregate, flow: "postRide", requestedStep: step, trackerId: activeTrackerId }))

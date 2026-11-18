@@ -133,9 +133,20 @@ export interface UserProfile {
   canSeeApi: boolean;
   emailVerified: boolean;
   phoneVerified: boolean;
+  /** Required for drivers: their daily selfie is checked against it. */
+  profilePictureUrl?: string | null;
 }
 
 export type UserProfileResponse = ApiResponse<UserProfile>;
+
+export interface ProfilePhotoResult {
+  profilePictureUrl: string;
+  /** What the AI thought of the photo, for the driver. */
+  feedback: string;
+  checked: boolean;
+}
+
+export type ProfilePhotoResponse = ApiResponse<ProfilePhotoResult>;
 
 export interface DriverNotificationSettings {
   sendNotification: boolean;
@@ -498,10 +509,183 @@ export interface ChecklistStepResponseData {
   tripId?: string;
   type: string;
   vehicleMetadata?: VehicleMetadata;
+  /** The server-side AI reading of the dashboard photo (interior step only). */
+  dashboardReading?: DashboardReading | null;
 }
 
 export type ChecklistStepResponse =
   ApiResponse<ChecklistStepResponseData>;
+
+/* ------------------------------------------------------- checklist AI (server) */
+
+/** Where a server-side AI job is. Results arrive even if the app was closed. */
+export type ChecklistAiStatus = "PROCESSING" | "COMPLETED" | "FAILED";
+
+export type DashboardReadingFlag =
+  | "ODOMETER_UNREADABLE"
+  | "FUEL_UNREADABLE"
+  | "ODOMETER_BELOW_PREVIOUS"
+  | "ODOMETER_LARGE_JUMP"
+  | "ODOMETER_UNCERTAIN"
+  | "LOW_FUEL"
+  | "WARNING_LIGHTS"
+  | "POOR_PHOTO"
+  | "MILES_CONVERTED";
+
+/** Odometer and fuel read from a dashboard photo, checked against the car's last reading. */
+export interface DashboardReading {
+  id: string;
+  status: ChecklistAiStatus;
+  checklistType: ChecklistType;
+  imageUrl: string;
+  odometerKm?: number | null;
+  odometerConfidence?: number | null;
+  fuelPercent?: number | null;
+  fuelConfidence?: number | null;
+  imageQuality?: string | null;
+  warningLights: string[];
+  previousOdometerKm?: number | null;
+  previousFuelPercent?: number | null;
+  previousReadingAt?: string | null;
+  distanceSinceLastKm?: number | null;
+  flags: DashboardReadingFlag[];
+  needsReview: boolean;
+  /** Written for the driver. */
+  headline?: string | null;
+  feedback?: string | null;
+  createdAt?: string;
+  completedAt?: string | null;
+  durationMs?: number | null;
+}
+
+export type DashboardReadingResponse = ApiResponse<DashboardReading | null>;
+
+export type ExteriorSide = "FRONT" | "BACK" | "LEFT_SIDE" | "RIGHT_SIDE";
+
+export type PhotoCheckOutcome =
+  | "NO_CHANGE"
+  | "NEW_DAMAGE"
+  | "NO_BASELINE"
+  | "UNUSABLE_PHOTO"
+  | "WRONG_SIDE";
+
+export interface DamageFinding {
+  location?: string | null;
+  kind?: string | null;
+  severity?: "MINOR" | "MODERATE" | "SEVERE" | string | null;
+  description?: string | null;
+  confidence?: number | null;
+}
+
+/** One exterior photo compared with the same side of the car in its previous report. */
+export interface PhotoCheck {
+  id: string;
+  status: ChecklistAiStatus;
+  checklistType: ChecklistType;
+  side: ExteriorSide;
+  imageUrl: string;
+  outcome?: PhotoCheckOutcome | null;
+  photoUsable?: boolean | null;
+  newDamage: DamageFinding[];
+  existingDamage: DamageFinding[];
+  previousImageUrl?: string | null;
+  previousChecklistType?: ChecklistType | null;
+  previousCapturedAt?: string | null;
+  headline?: string | null;
+  feedback?: string | null;
+  retakeAdvice?: string | null;
+  completedAt?: string | null;
+  durationMs?: number | null;
+}
+
+export type PhotoCheckResponse = ApiResponse<PhotoCheck | null>;
+
+export interface StartPhotoCheckPayload {
+  checklistType: ChecklistType;
+  side: ExteriorSide;
+  imageUrl: string;
+  vehicleId?: string;
+  checklistTrackerId?: string;
+}
+
+/** The car's condition for a submitted exterior report, compared with its previous report. */
+export interface ConditionReport {
+  id: string;
+  status: ChecklistAiStatus;
+  checklistType: ChecklistType;
+  newDamageFound?: boolean | null;
+  needsReview: boolean;
+  headline?: string | null;
+  feedback?: string | null;
+  previousChecklistType?: ChecklistType | null;
+  previousCapturedAt?: string | null;
+  completedAt?: string | null;
+  durationMs?: number | null;
+  sides: PhotoCheck[];
+}
+
+export type ConditionReportResponse = ApiResponse<ConditionReport | null>;
+
+/** What the driver already submitted for a report: each step's photos and the confirmed readings. */
+export interface SubmittedChecklistPhotos {
+  checklistTrackerId: string;
+  preRideCompletedAt?: string | null;
+  postRideCompletedAt?: string | null;
+  steps: {
+    checklistId: string;
+    step: "EXTERIOR" | "INTERIOR" | "VEHICLE_HEALTH_CHECK" | "DRIVER_PHOTO" | string;
+    type: ChecklistType;
+    submittedAt?: string | null;
+    /** `type` is the photo's slot (FRONT, DASHBOARD...); for ACCESSORIES `publicId` is the feature id. */
+    images: { type: string; url: string; publicId?: string | null }[];
+  }[];
+  preTripReadings?: { odometerKM?: number | null; fuelLevelInPercentage?: number | null } | null;
+  postTripReadings?: { odometerKM?: number | null; fuelLevelInPercentage?: number | null } | null;
+}
+
+export type SubmittedChecklistPhotosResponse = ApiResponse<SubmittedChecklistPhotos>;
+
+export type PhotoInsightKind =
+  | "DAMAGE"
+  | "ACCESSORY"
+  | "OIL_LEVEL"
+  | "COOLANT_LEVEL"
+  | "SAFETY_EQUIPMENT"
+  | "DRIVER_SELFIE";
+
+export type PhotoInsightVerdict = "OK" | "ATTENTION" | "PROBLEM" | "UNUSABLE";
+
+export type IdentityMatch = "MATCH" | "NO_MATCH" | "UNSURE" | "NO_FACE" | "NO_REFERENCE";
+
+/** The AI's verdict and recommendation for one checklist photo. */
+export interface PhotoInsight {
+  id: string;
+  status: ChecklistAiStatus;
+  kind: PhotoInsightKind;
+  label?: string | null;
+  imageUrl: string;
+  verdict?: PhotoInsightVerdict | null;
+  /** Selfies only: how it compares with the profile photo. */
+  identityMatch?: IdentityMatch | null;
+  matchConfidence?: number | null;
+  headline?: string | null;
+  findings: string[];
+  recommendation?: string | null;
+  retakeAdvice?: string | null;
+  completedAt?: string | null;
+  durationMs?: number | null;
+}
+
+export type PhotoInsightResponse = ApiResponse<PhotoInsight | null>;
+export type PhotoInsightListResponse = ApiResponse<PhotoInsight[]>;
+
+export interface StartPhotoInsightPayload {
+  kind: PhotoInsightKind;
+  label?: string;
+  imageUrl: string;
+  checklistType: ChecklistType;
+  checklistTrackerId?: string;
+}
 
 export interface PreRideChecklistSummarySection {
   photosCaptured: number;
@@ -522,10 +706,13 @@ export interface PreRideChecklistSummary {
   interiorPhotos: PreRideInteriorChecklistSummarySection;
   totalCompletionTime: string;
   vehicleHealthCheckPhotos: PreRideChecklistSummarySection;
+  /** The vehicle the report is about (from its exterior photos). */
   vehicleInfo?: {
     vehicleId?: string;
     vehicleIdentifier: string;
     vehicleName: string;
+    /** The vehicle's primary photo, when it has one. */
+    vehicleImageUrl?: string | null;
   };
 }
 
@@ -581,7 +768,11 @@ export interface TransitionDriverTripStatusResponseData {
 export type TransitionDriverTripStatusResponse =
   ApiResponse<TransitionDriverTripStatusResponseData>;
 
-export type VehicleFeatureCategory = "FLASHY" | "PRIMARY" | "AUXILIARY";
+/**
+ * SAFETY_EQUIPMENT (first aid kit, warning triangle, fire extinguisher) is
+ * photographed in the health check, not listed under Accessories.
+ */
+export type VehicleFeatureCategory = "FLASHY" | "PRIMARY" | "AUXILIARY" | "SAFETY_EQUIPMENT";
 
 export interface VehicleFeature {
   id: string;

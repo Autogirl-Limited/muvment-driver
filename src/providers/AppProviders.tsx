@@ -2,7 +2,8 @@
 
 import { useState, type ReactNode } from "react";
 import { SessionProvider } from "next-auth/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 
 import { NetworkStatusProvider } from "./NetworkStatusProvider";
 import { PasswordResetProvider } from "./PasswordResetProvider";
@@ -11,6 +12,7 @@ import { ThemeProvider } from "./ThemeProvider";
 import { ToastProvider } from "./ToastProvider";
 import { OfflineBanner } from "@/components/system/OfflineBanner";
 import { ServiceWorkerRegistrar } from "@/components/system/ServiceWorkerRegistrar";
+import { PERSIST_MAX_AGE_MS, persistOptions } from "@/lib/offline/queryPersistence";
 
 const createQueryClient = () =>
   new QueryClient({
@@ -19,6 +21,8 @@ const createQueryClient = () =>
         networkMode: "always",
       },
       queries: {
+        // Must be at least the persisted max age, or cached data is dropped before it can be saved.
+        gcTime: PERSIST_MAX_AGE_MS,
         networkMode: "online",
         refetchOnReconnect: true,
         refetchOnWindowFocus: true,
@@ -32,7 +36,7 @@ export const AppProviders = ({ children }: { children: ReactNode }) => {
 
   return (
     <SessionProvider refetchOnWindowFocus={false}>
-      <QueryClientProvider client={queryClient}>
+      <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
         <SessionTokenSync />
         <NetworkStatusProvider>
           <ThemeProvider>
@@ -45,7 +49,7 @@ export const AppProviders = ({ children }: { children: ReactNode }) => {
             </ToastProvider>
           </ThemeProvider>
         </NetworkStatusProvider>
-      </QueryClientProvider>
+      </PersistQueryClientProvider>
     </SessionProvider>
   );
 };

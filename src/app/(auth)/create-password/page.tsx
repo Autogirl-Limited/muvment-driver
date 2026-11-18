@@ -69,6 +69,7 @@ export default function CreatePasswordPage() {
 
         <form onSubmit={handleSetPassword} noValidate>
           <TextField
+            floating
             label="New Password"
             placeholder="Enter new password"
             value={newPassword}
@@ -84,6 +85,7 @@ export default function CreatePasswordPage() {
           />
 
           <TextField
+            floating
             label="Confirm Password"
             placeholder="Confirm new password"
             value={confirmPassword}

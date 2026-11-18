@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Fuel, Gauge, PencilLine, RotateCcw } from "lucide-react";
 
+import { DashboardReadingNote } from "@/components/checklist/AiPhotoNotes";
 import { Spinner } from "@/components/ui/Spinner";
-import type { VehicleMetadata } from "@/lib/api/types";
+import type { ChecklistType, VehicleMetadata } from "@/lib/api/types";
 
 export const parseNumericInput = (value: string) => {
   const normalizedValue = value.replace(/[,%\s]/g, "");
@@ -80,7 +81,17 @@ export const ReadingsFields = ({ odometer, fuelLevel, onOdometerChange, onFuelLe
   </div>
 );
 
-export const AnalysisReviewCard = ({ metadata, children }: { metadata: VehicleMetadata; children?: React.ReactNode }) => (
+export const AnalysisReviewCard = ({
+  metadata,
+  children,
+  trackerId,
+  checklistType,
+}: {
+  metadata: VehicleMetadata;
+  children?: React.ReactNode;
+  trackerId?: string;
+  checklistType?: ChecklistType;
+}) => (
   <div className="anim-rise-in mb-6 rounded-2xl border border-accent/30 bg-accent-soft p-4">
     <p className="text-headline mb-1 text-text">Dashboard Analysis</p>
     <p className="text-footnote mb-4 text-text-2">
@@ -97,6 +108,7 @@ export const AnalysisReviewCard = ({ metadata, children }: { metadata: VehicleMe
         <p className="text-body font-semibold text-text">{formatMetadataValue(metadata.fuelLevelInPercentage)}%</p>
       </div>
     </div>
+    {checklistType && <div className="-mt-2 mb-4"><DashboardReadingNote trackerId={trackerId} checklistType={checklistType} /></div>}
     {children}
   </div>
 );

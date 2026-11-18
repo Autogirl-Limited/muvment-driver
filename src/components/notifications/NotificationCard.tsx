@@ -1,65 +1,50 @@
 "use client";
 
-import { AlertCircle, AlertTriangle, Bell, CheckCircle2 } from "lucide-react";
+import { Bell } from "lucide-react";
 
-import type { NotificationIconName } from "@/lib/utils/notificationDisplay";
+import type { NotificationLook } from "@/lib/utils/notificationLook";
 
-const ICONS: Record<NotificationIconName, typeof Bell> = {
-  "alert-circle": AlertCircle,
-  "alert-triangle": AlertTriangle,
-  "check-circle": CheckCircle2,
-  bell: Bell,
-};
-
-export const NotificationIcon = ({ name, size = 18 }: { name: NotificationIconName; size?: number }) => {
-  const Icon = ICONS[name] ?? Bell;
-
-  return <Icon size={size} />;
-};
-
-interface NotificationCardProps {
-  iconName: NotificationIconName;
-  title: string;
-  description: string;
-  timestamp: string;
-  isRead?: boolean;
-  onClick?: () => void;
-}
-
+/** A notification "platter": app-style tinted icon, bold title, two-line preview, unread dot. */
 export const NotificationCard = ({
-  iconName,
+  look,
   title,
   description,
   timestamp,
   isRead = false,
   onClick,
-}: NotificationCardProps) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className={`card pressable mb-3 flex w-full overflow-hidden text-left ${
-      isRead ? "" : "border-accent/40"
-    }`}
-  >
-    <span className={`w-1.5 shrink-0 ${isRead ? "bg-border-strong" : "bg-accent"}`} />
-    <span className="flex flex-1 items-start gap-3 p-4">
+}: {
+  look: NotificationLook;
+  title: string;
+  description: string;
+  timestamp: string;
+  isRead?: boolean;
+  onClick?: () => void;
+}) => {
+  const Icon = look.icon ?? Bell;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="pressable-row hairline-b flex w-full items-start gap-3 px-4 py-3 text-left last:border-b-0"
+    >
       <span
-        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-          isRead ? "bg-surface-alt text-text-3" : "bg-accent-soft text-accent"
-        }`}
+        aria-hidden
+        className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] text-white shadow-sm"
+        style={{ backgroundImage: `linear-gradient(160deg, ${look.tint}, ${look.tint}CC)` }}
       >
-        <NotificationIcon name={iconName} />
+        <Icon size={20} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2">
-          {!isRead && <span className="h-2 w-2 shrink-0 rounded-full bg-accent" />}
-          <span className={`text-body block ${isRead ? "font-medium text-text-2" : "font-semibold text-text"}`}>
+        <span className="flex items-baseline gap-2">
+          <span className={`text-body min-w-0 flex-1 truncate ${isRead ? "font-medium text-text-2" : "font-semibold text-text"}`}>
             {title}
           </span>
+          <span className="text-caption shrink-0 text-text-4">{timestamp}</span>
         </span>
-        <span className="text-callout mt-1 block text-text-2">{description}</span>
-        <span className="text-caption mt-2 block text-text-4">{timestamp}</span>
+        <span className="text-callout mt-0.5 line-clamp-2 block text-text-3">{description}</span>
       </span>
-    </span>
-  </button>
-);
+      {!isRead && <span aria-label="Unread" className="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-accent" />}
+    </button>
+  );
+};

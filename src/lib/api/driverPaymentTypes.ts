@@ -57,13 +57,15 @@ export interface RideActionPayload {
 }
 
 /* ------------------------------------------------------------------ schedule */
-export type DriverShift = "DAY" | "NIGHT" | "ALL_DAY" | "NONE";
+export type DriverShift = "DAY" | "NIGHT" | "ALL_DAY" | "OFF_TIME" | "SICK_LEAVE" | "NOT_ASSIGNED" | "NONE";
 
 export interface DriverScheduleDay {
   date: string;
   weekday: string;
   shift: DriverShift | null;
+  /** True only for days off (the days an off-day claim can be made for). */
   off: boolean;
+  sickLeave?: boolean;
 }
 
 export interface DriverScheduleWeek {

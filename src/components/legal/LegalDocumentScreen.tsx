@@ -1,15 +1,37 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { Banknote, ChevronDown, ClipboardCheck, FileText, Lock, MapPin, ShieldCheck, TriangleAlert, UserCheck, type LucideIcon } from "lucide-react";
 
 import { BackButton } from "@/components/ui/BackButton";
-import { NavBar, Screen } from "@/components/ui/Screen";
+import { NavBar, Screen, SectionHeader } from "@/components/ui/Screen";
+import type { LegalDocument, LegalIcon } from "@/lib/data/legalDocuments";
 
 interface LegalDocumentScreenProps {
-  body: string;
-  title: string;
+  document: LegalDocument;
 }
+
+const ICONS: Record<LegalIcon, LucideIcon> = {
+  banknote: Banknote,
+  checklist: ClipboardCheck,
+  invoice: FileText,
+  locationFill: MapPin,
+  lockFill: Lock,
+  personCheck: UserCheck,
+  privacy: ShieldCheck,
+  shieldCheck: ShieldCheck,
+  warning: TriangleAlert,
+};
+
+const IconTile = ({ icon, tint, size = 36 }: { icon: LegalIcon; tint: string; size?: number }) => {
+  const Icon = ICONS[icon];
+
+  return (
+    <span className="flex shrink-0 items-center justify-center text-white" style={{ width: size, height: size, backgroundColor: tint, borderRadius: size * 0.27 }}>
+      <Icon size={size * 0.52} />
+    </span>
+  );
+};
 
 interface LegalSection {
   body: string[];
@@ -19,8 +41,6 @@ interface LegalSection {
 
 const isTopLevelSectionHeading = (line: string) => /^\d+\.\s/.test(line);
 const isNestedSectionHeading = (line: string) => /^\d+\.\d+\s/.test(line);
-const isDocumentTitle = (line: string) =>
-  ["Muvment Privacy Policy", "Muvment Terms of Use", "Employee Terms of Use", "Terms of service - Drivers"].includes(line);
 
 const parseLegalDocument = (body: string) => {
   const lines = body.split("\n").map((line) => line.trim()).filter(Boolean);
@@ -28,8 +48,9 @@ const parseLegalDocument = (body: string) => {
   const metadata: string[] = [];
   let currentSection: LegalSection | undefined;
 
-  lines.forEach((line) => {
-    if (isDocumentTitle(line)) return;
+  lines.forEach((line, lineIndex) => {
+    // The first line is the document's own title, shown above already.
+    if (lineIndex === 0) return;
     if (line.startsWith("Operated by") || line.startsWith("Last updated:") || line.startsWith("Effective date:")) {
       metadata.push(line);
       return;
@@ -44,9 +65,6 @@ const parseLegalDocument = (body: string) => {
 
   return { metadata, sections };
 };
-
-const getMetadataValue = (metadata: string[], label: string) =>
-  metadata.find((item) => item.startsWith(label))?.replace(label, "").trim();
 
 const SectionLine = ({ line }: { line: string }) => {
   if (line.startsWith("- ")) {
@@ -63,35 +81,51 @@ const SectionLine = ({ line }: { line: string }) => {
   return <li className="text-callout mb-2 list-none text-text-2">{line}</li>;
 };
 
-export const LegalDocumentScreen = ({ body, title }: LegalDocumentScreenProps) => {
+export const LegalDocumentScreen = ({ document: legal }: LegalDocumentScreenProps) => {
+  const { body, title } = legal;
   const document = useMemo(() => parseLegalDocument(body), [body]);
   const [expandedSectionId, setExpandedSectionId] = useState<string | null>(document.sections[0]?.id ?? null);
-  const lastUpdated = getMetadataValue(document.metadata, "Last updated:");
-  const effectiveDate = getMetadataValue(document.metadata, "Effective date:");
-  const operatedBy = document.metadata.find((item) => item.startsWith("Operated by"));
+  
+  
+  
 
   return (
     <Screen>
-      <NavBar left={<BackButton />} largeTitle={title} subtitle={operatedBy} />
+      <NavBar left={<BackButton />} largeTitle={title} subtitle={document.metadata.find((item) => item.startsWith("Operated by"))} />
 
       <div className="px-5 pb-12">
-        {(lastUpdated || effectiveDate) && (
-          <div className="mb-5 flex flex-wrap gap-2">
-            {lastUpdated && (
-              <div className="rounded-xl border border-border bg-surface px-3 py-2">
-                <p className="text-caption text-text-3">Last updated</p>
-                <p className="text-callout font-semibold text-text">{lastUpdated}</p>
-              </div>
-            )}
-            {effectiveDate && (
-              <div className="rounded-xl border border-border bg-surface px-3 py-2">
-                <p className="text-caption text-text-3">Effective date</p>
-                <p className="text-callout font-semibold text-text">{effectiveDate}</p>
-              </div>
-            )}
-          </div>
-        )}
+        <div className="mb-6 flex items-start gap-4">
+          <IconTile icon={legal.icon} tint={legal.tint} size={64} />
+          <p className="text-[16px] leading-[23px] text-text-2">{legal.intro}</p>
+        </div>
 
+        <SectionHeader>Document details</SectionHeader>
+        <div className="card mb-6 divide-y divide-separator p-0">
+          {legal.details.map((detail) => (
+            <div key={detail.label} className="flex items-center justify-between gap-4 px-4 py-3">
+              <span className="text-callout text-text-3">{detail.label}</span>
+              <span className="text-body text-right font-medium text-text">{detail.value}</span>
+            </div>
+          ))}
+        </div>
+
+        <SectionHeader>In plain language</SectionHeader>
+        <div className="card divide-y divide-separator p-0">
+          {legal.summary.map((item) => (
+            <div key={item.title} className="flex items-start gap-3 px-4 py-3.5">
+              <IconTile icon={item.icon} tint={item.tint} />
+              <div className="min-w-0 flex-1">
+                <p className="text-body font-semibold text-text">{item.title}</p>
+                <p className="text-callout mt-0.5 text-text-2">{item.body}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="text-footnote mb-6 ml-4 mt-2 text-text-3">
+          This summary is here to help you understand the key points. It is not a substitute for the full {legal.title}, which is what applies.
+        </p>
+
+        <SectionHeader>Full text</SectionHeader>
         <div className="space-y-3">
           {document.sections.map((section) => {
             const isExpanded = expandedSectionId === section.id;
@@ -133,6 +167,8 @@ export const LegalDocumentScreen = ({ body, title }: LegalDocumentScreenProps) =
             );
           })}
         </div>
+
+        <p className="text-footnote mx-4 mt-5 text-center text-text-3">{legal.agreement}</p>
       </div>
     </Screen>
   );

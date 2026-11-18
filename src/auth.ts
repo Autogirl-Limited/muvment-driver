@@ -47,6 +47,8 @@ const getTokenExpiryMs = (token: string): number | undefined => {
   }
 };
 
+const isRefreshTokenRejected = (status: number) => status === 400 || status === 401 || status === 403;
+
 const refreshAccessToken = async (token: JWT): Promise<JWT> => {
   if (!token.refreshToken) {
     return { ...token, error: "RefreshFailed" };
@@ -65,7 +67,9 @@ const refreshAccessToken = async (token: JWT): Promise<JWT> => {
     const accessToken = payload?.data?.accessToken;
 
     if (!response.ok || !accessToken) {
-      return { ...token, error: "RefreshFailed" };
+      // Only a rejected refresh token ends the session. A server hiccup (5xx,
+      // rate limit) keeps the session so a reload doesn't log the driver out.
+      return isRefreshTokenRejected(response.status) ? { ...token, error: "RefreshFailed" } : token;
     }
 
     return {
@@ -75,7 +79,8 @@ const refreshAccessToken = async (token: JWT): Promise<JWT> => {
       error: undefined,
     };
   } catch {
-    return { ...token, error: "RefreshFailed" };
+    // Offline or unreachable: keep the session and retry on the next request.
+    return token;
   }
 };
 

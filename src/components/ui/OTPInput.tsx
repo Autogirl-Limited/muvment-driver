@@ -27,11 +27,11 @@ export const OTPInput = ({ length = 6, value, onChange }: OTPInputProps) => {
           return (
             <div
               key={index}
-              className={`flex h-14 flex-1 items-center justify-center rounded-xl border bg-surface text-[22px] font-semibold text-text transition-[border-color,box-shadow,transform] duration-200 ${
+              className={`flex h-16 flex-1 items-center justify-center rounded-xl border bg-surface text-[26px] font-semibold text-text transition-[border-color,box-shadow,transform] duration-200 ${
                 isActive
                   ? "border-accent shadow-[0_0_0_3px_rgba(6,115,255,0.15)]"
                   : digit
-                    ? "border-border-strong"
+                    ? "border-accent/40 bg-accent-soft"
                     : "border-border"
               }`}
             >

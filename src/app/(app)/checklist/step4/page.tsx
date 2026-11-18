@@ -5,10 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Camera, X } from "lucide-react";
 
 import { ChecklistSectionTitle, ChecklistShell } from "@/components/checklist/ChecklistShell";
+import { PhotoInsightNote } from "@/components/checklist/AiPhotoNotes";
 import { PhotoUploadCard } from "@/components/checklist/PhotoUploadCard";
 import { AlertDialog } from "@/components/ui/Dialog";
 import { Spinner } from "@/components/ui/Spinner";
-import { usePhotoSlots } from "@/hooks/usePhotoSlot";
+import { clearPhotoDraft, usePhotoSlots } from "@/hooks/usePhotoSlot";
 import { getApiErrorMessage, isChecklistStepConflictError } from "@/lib/api/errors";
 import {
   usePreRideChecklistSummary,
@@ -18,7 +19,7 @@ import {
   useTodayChecklist,
 } from "@/lib/api/hooks/usePreRideChecklist";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
-import type { VehicleHealthCheckPhoto } from "@/lib/api/types";
+import type { PhotoInsightKind, VehicleHealthCheckPhoto } from "@/lib/api/types";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute, getPreRideGuardedStep } from "@/lib/utils/checklistNavigation";
 import { isChecklistPhotoUploaded, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
 import { clearChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
@@ -28,6 +29,11 @@ import { useToast } from "@/providers/ToastProvider";
 type HealthKey = "oilLevel" | "coolantLevel" | "safetyEquipment";
 
 const HEALTH_KEYS: readonly HealthKey[] = ["oilLevel", "coolantLevel", "safetyEquipment"];
+const HEALTH_INSIGHT_KINDS: Record<HealthKey, PhotoInsightKind> = {
+  coolantLevel: "COOLANT_LEVEL",
+  oilLevel: "OIL_LEVEL",
+  safetyEquipment: "SAFETY_EQUIPMENT",
+};
 const HEALTH_PHOTO_TYPES: Record<HealthKey, VehicleHealthCheckPhoto> = {
   coolantLevel: "COOLANT_LEVEL",
   oilLevel: "OIL_LEVEL",
@@ -60,8 +66,8 @@ export default function ChecklistStep4Page() {
   const checklistSummary = checklistSummaryQuery.data?.data;
   const vehicleHealthIdempotencyKey = usePersistentIdempotencyKey(`pre-trip-health-${activeTrackerId}`);
   const driverPhotoIdempotencyKey = usePersistentIdempotencyKey(`pre-trip-driver-${activeTrackerId}`);
-  const health = usePhotoSlots(HEALTH_KEYS);
-  const selfieSlot = usePhotoSlots(["selfie"] as const);
+  const health = usePhotoSlots(HEALTH_KEYS, activeTrackerId ? `health:${activeTrackerId}` : undefined);
+  const selfieSlot = usePhotoSlots(["selfie"] as const, activeTrackerId ? `selfie:${activeTrackerId}` : undefined);
   const selfie = selfieSlot.photos.selfie;
 
   useEffect(() => {
@@ -132,6 +138,8 @@ export default function ChecklistStep4Page() {
         throw new Error("The pre-ride report was not confirmed. Please try again.");
       }
 
+      clearPhotoDraft(`health:${activeTrackerId}`);
+      clearPhotoDraft(`selfie:${activeTrackerId}`);
       toast.success("Pre Ride Pilot Report submitted", "You are ready for your first ride today.");
       clearChecklistVehicleSelection(currentUserQuery.data?.data.userId);
       router.replace("/home");
@@ -199,6 +207,15 @@ export default function ChecklistStep4Page() {
             failed={health.photos[key].status === "failed"}
             onClick={() => void health.capture({ key, label: `vehicle-health-${HEALTH_PHOTO_TYPES[key]}` })}
             onRemove={() => void health.remove(key)}
+            footer={
+              <PhotoInsightNote
+                imageUrl={health.photos[key].fileUrl}
+                kind={HEALTH_INSIGHT_KINDS[key]}
+                label={HEALTH_LABELS[key].title}
+                checklistType="PRE_TRIP"
+                trackerId={activeTrackerId}
+              />
+            }
           />
         ))}
 
@@ -259,6 +276,17 @@ export default function ChecklistStep4Page() {
               <Camera size={18} />
               Open Camera
             </button>
+          </div>
+        )}
+        {selfie.status === "uploaded" && (
+          <div className="-mt-3 mb-6">
+            <PhotoInsightNote
+              imageUrl={selfie.fileUrl}
+              kind="DRIVER_SELFIE"
+              label="Driver selfie"
+              checklistType="PRE_TRIP"
+              trackerId={activeTrackerId}
+            />
           </div>
         )}
       </ChecklistShell>

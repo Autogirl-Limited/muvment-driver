@@ -54,6 +54,7 @@ export default function ResetPasswordPage() {
 
         <form onSubmit={handleSendCode} noValidate>
           <TextField
+            floating
             label="Email Address"
             placeholder="Enter your email address"
             value={email}

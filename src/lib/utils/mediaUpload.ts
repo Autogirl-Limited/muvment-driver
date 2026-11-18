@@ -86,12 +86,12 @@ const loadImage = (source: Blob): Promise<ImageBitmap | HTMLImageElement> => {
  * CHECKLIST_PHOTO_MAX_SIDE and re-encodes it as JPEG. Replaces
  * expo-image-manipulator from the native app.
  */
-export const prepareChecklistPhoto = async (source: Blob): Promise<Blob> => {
+export const prepareChecklistPhoto = async (source: Blob, maxSide = CHECKLIST_PHOTO_MAX_SIDE): Promise<Blob> => {
   const image = await loadImage(source);
   const width = "naturalWidth" in image ? image.naturalWidth : image.width;
   const height = "naturalHeight" in image ? image.naturalHeight : image.height;
   const longestSide = Math.max(width, height);
-  const scale = longestSide > CHECKLIST_PHOTO_MAX_SIDE ? CHECKLIST_PHOTO_MAX_SIDE / longestSide : 1;
+  const scale = longestSide > maxSide ? maxSide / longestSide : 1;
   const targetWidth = Math.max(1, Math.round(width * scale));
   const targetHeight = Math.max(1, Math.round(height * scale));
 
