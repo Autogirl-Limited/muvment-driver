@@ -8,6 +8,12 @@ import type {
   QueryClient,
 } from "@tanstack/react-query";
 
+import {
+  markLiveNotificationsRead,
+  mergeLiveNotifications,
+  useIsNotificationSocketLive,
+} from "@/lib/notifications/liveNotifications";
+
 import { apiFetchClient } from "../client";
 import type {
   ApiMessageResponse,
@@ -27,6 +33,9 @@ export const USER_NOTIFICATIONS_QUERY_KEY = [
 ] as const;
 
 const NOTIFICATIONS_PAGE_SIZE = 10;
+
+/** Polling is only a fallback for when the WebSocket is down. */
+const FALLBACK_POLL_MS = 60_000;
 
 type RawUserNotification = UserNotification & {
   user?: unknown;
@@ -164,8 +173,10 @@ const markAllLoadedNotificationsRead = (
   );
 };
 
-export const useUserNotifications = () =>
-  useInfiniteQuery<UserNotificationsResponse, Error>({
+export const useUserNotifications = () => {
+  const isSocketLive = useIsNotificationSocketLive();
+
+  return useInfiniteQuery<UserNotificationsResponse, Error>({
     queryKey: USER_NOTIFICATIONS_QUERY_KEY,
     queryFn: async ({ pageParam }) => {
       const response = await apiFetchClient.get<RawUserNotificationsResponse>(
@@ -174,14 +185,26 @@ export const useUserNotifications = () =>
         ),
       );
 
-      return sanitizeNotificationsResponse(response.data);
+      const page = sanitizeNotificationsResponse(response.data);
+
+      // Keep live notifications the server's answer raced past.
+      if (pageParam !== 0 && typeof pageParam === "number") {
+        return page;
+      }
+
+      const { content, added } = mergeLiveNotifications(page.data.content);
+
+      return added === 0
+        ? page
+        : { ...page, data: { ...page.data, content, totalElements: page.data.totalElements + added } };
     },
     initialPageParam: 0,
     getNextPageParam: (lastPage) =>
       lastPage.data.last ? undefined : lastPage.data.page + 1,
-    refetchInterval: 60_000,
+    refetchInterval: isSocketLive ? false : FALLBACK_POLL_MS,
     staleTime: 30_000,
   });
+};
 
 export const getUnreadNotificationsCount = (
   notificationsData?: InfiniteData<UserNotificationsResponse>,
@@ -213,7 +236,12 @@ export const useUnreadNotificationsCount = () => {
 export const useMarkNotificationRead = () => {
   const queryClient = useQueryClient();
 
-  return useMutation<MarkNotificationReadResponse, Error, string>({
+  return useMutation<
+    MarkNotificationReadResponse,
+    Error,
+    string,
+    { previous?: InfiniteData<UserNotificationsResponse> }
+  >({
     mutationFn: async (notificationId) => {
       const response =
         await apiFetchClient.patch<MarkNotificationReadResponse>(
@@ -222,8 +250,22 @@ export const useMarkNotificationRead = () => {
 
       return response.data;
     },
-    onSuccess: (_response, notificationId) => {
+    // Show it read straight away; put it back if the server says no.
+    onMutate: async (notificationId) => {
+      await queryClient.cancelQueries({ queryKey: USER_NOTIFICATIONS_QUERY_KEY });
+      const previous = queryClient.getQueryData<InfiniteData<UserNotificationsResponse>>(
+        USER_NOTIFICATIONS_QUERY_KEY,
+      );
+
       markLoadedNotificationRead(queryClient, notificationId);
+      markLiveNotificationsRead(notificationId);
+
+      return { previous };
+    },
+    onError: (_error, _notificationId, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(USER_NOTIFICATIONS_QUERY_KEY, context.previous);
+      }
     },
   });
 };
@@ -241,6 +283,7 @@ export const useMarkAllNotificationsRead = () => {
     },
     onSuccess: () => {
       markAllLoadedNotificationsRead(queryClient);
+      markLiveNotificationsRead();
       void queryClient.invalidateQueries({
         queryKey: USER_NOTIFICATIONS_QUERY_KEY,
       });
