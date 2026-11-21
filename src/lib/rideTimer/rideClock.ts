@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { DriverTripStatus, RideTimer } from "../api/types";
 import { parseLagosMs } from "../utils/lagosTime";
 
+import { getEffectiveBookedEndMs } from "./ridePauses";
+
 /** Statuses from which the driver can start the ride (or the server auto-starts it). */
 export const PRE_RIDE_STATUSES: readonly DriverTripStatus[] = [
   "NOT_STARTED",
@@ -39,7 +41,8 @@ export interface RideClock {
 
 export const computeRideClock = (timer: RideTimer | null | undefined, nowMs: number): RideClock => {
   const bookedStartMs = parseLagosMs(timer?.bookedStartAt);
-  const bookedEndMs = parseLagosMs(timer?.bookedEndAt);
+  // Time spent paused is not used up, so the end moves back while paused.
+  const bookedEndMs = getEffectiveBookedEndMs(timer, parseLagosMs(timer?.bookedEndAt), nowMs);
   const secondsToStart = bookedStartMs !== undefined ? Math.ceil((bookedStartMs - nowMs) / 1000) : undefined;
 
   if (!timer?.actualStartAt) {

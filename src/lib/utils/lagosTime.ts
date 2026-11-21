@@ -151,14 +151,16 @@ export const formatMinutes = (minutes?: number | null) => {
   return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
 };
 
-/** "2:14:05" */
+/** "2:14:05", or "1d 6:00:00" once a day or more is involved. */
 export const formatClock = (totalSeconds: number) => {
   const safe = Math.max(0, Math.floor(totalSeconds));
-  const hours = Math.floor(safe / 3600);
+  const days = Math.floor(safe / 86400);
+  const hours = Math.floor((safe % 86400) / 3600);
   const minutes = Math.floor((safe % 3600) / 60);
   const seconds = safe % 60;
+  const clock = `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 
-  return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return days > 0 ? `${days}d ${clock}` : clock;
 };
 
 const capitalise = (value: string) => value.charAt(0) + value.slice(1).toLowerCase();
