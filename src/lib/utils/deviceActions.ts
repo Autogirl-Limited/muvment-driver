@@ -13,6 +13,8 @@ export type CameraFacing = "environment" | "user";
 
 export type PhotoSource = "camera" | "gallery";
 
+const CAPTURE_GIVE_UP_AFTER_FOCUS_MS = 45_000;
+
 /**
  * Opens the camera (default) or, with source "gallery", the photo library.
  * The gallery variant leaves out the `capture` attribute so the phone shows
@@ -63,6 +65,11 @@ export const capturePhoto = (
 
     // The "cancel" event is supported by modern browsers; fall back to a focus check for others.
     input.addEventListener("cancel", () => finish(null));
+    // Browsers without "cancel" never report a dismissed picker, so give up
+    // after the window is back. This must be long: on phones the window
+    // regains focus well before a camera photo has been handed over, and
+    // finishing early drops the photo (the driver lands back on the page with
+    // nothing saved).
     window.addEventListener(
       "focus",
       () => {
@@ -70,7 +77,7 @@ export const capturePhoto = (
           if (!input.files?.length) {
             finish(null);
           }
-        }, 1200);
+        }, CAPTURE_GIVE_UP_AFTER_FOCUS_MS);
       },
       { once: true },
     );

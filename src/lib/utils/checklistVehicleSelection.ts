@@ -11,8 +11,17 @@ export interface ChecklistVehicleSelection {
 const getStorageKey = (userId: string) =>
   `${STORAGE_KEY_PREFIX}:${userId.trim()}:${toLagosDate(new Date())}`;
 
-const getSessionStorage = () =>
-  typeof window === "undefined" ? undefined : window.sessionStorage;
+// localStorage, not sessionStorage: the pick must survive the tab or the installed
+// app being closed before the first step is sent (the report doesn't exist yet).
+const getSessionStorage = () => {
+  if (typeof window === "undefined") return undefined;
+
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined; // private mode / blocked storage: the pick lasts until the page closes
+  }
+};
 
 export const readChecklistVehicleSelection = (
   userId?: string | null,
@@ -55,7 +64,11 @@ export const writeChecklistVehicleSelection = (
   userId: string,
   selection: ChecklistVehicleSelection,
 ) => {
-  getSessionStorage()?.setItem(getStorageKey(userId), JSON.stringify(selection));
+  try {
+    getSessionStorage()?.setItem(getStorageKey(userId), JSON.stringify(selection));
+  } catch {
+    // Out of space: the pick still lives in this page's state.
+  }
 };
 
 export const clearChecklistVehicleSelection = (userId?: string | null) => {

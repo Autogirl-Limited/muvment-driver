@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Camera, X } from "lucide-react";
 
@@ -9,6 +9,7 @@ import { PhotoInsightNote } from "@/components/checklist/AiPhotoNotes";
 import { PhotoUploadCard } from "@/components/checklist/PhotoUploadCard";
 import { AlertDialog } from "@/components/ui/Dialog";
 import { Spinner } from "@/components/ui/Spinner";
+import { useStepGate } from "@/hooks/useStepGate";
 import { clearPhotoDraft, usePhotoSlots } from "@/hooks/usePhotoSlot";
 import { getApiErrorMessage, isChecklistStepConflictError } from "@/lib/api/errors";
 import {
@@ -20,7 +21,8 @@ import {
 } from "@/lib/api/hooks/usePreRideChecklist";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import type { PhotoInsightKind, VehicleHealthCheckPhoto } from "@/lib/api/types";
-import { getChecklistStepRoute, getGuardedChecklistStepRoute, getPreRideGuardedStep } from "@/lib/utils/checklistNavigation";
+import { getChecklistStepRoute, getGuardedChecklistStepRoute } from "@/lib/utils/checklistNavigation";
+import { PRE_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
 import { isChecklistPhotoUploaded, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
 import { clearChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import { usePersistentIdempotencyKey } from "@/lib/utils/persistentIdempotencyKey";
@@ -70,13 +72,15 @@ export default function ChecklistStep4Page() {
   const selfieSlot = usePhotoSlots(["selfie"] as const, activeTrackerId ? `selfie:${activeTrackerId}` : undefined);
   const selfie = selfieSlot.photos.selfie;
 
-  useEffect(() => {
-    if (!activeTrackerId || checklistSummaryQuery.isFetching || !checklistSummary) return;
-    const guardedStep = getPreRideGuardedStep(4, checklistSummary);
-    if (guardedStep !== 4) {
-      router.replace(getChecklistStepRoute("preRide", activeTrackerId, guardedStep));
-    }
-  }, [activeTrackerId, checklistSummary, checklistSummaryQuery.isFetching, router]);
+  const stepGate = useStepGate({
+    summary: checklistSummary,
+    flow: "preRide",
+    isError: checklistSummaryQuery.isError,
+    isFetching: checklistSummaryQuery.isFetching,
+    onRecheck: () => void checklistSummaryQuery.refetch(),
+    step: 4,
+    trackerId: activeTrackerId,
+  });
 
   const hasSavedVehicleHealthChecklist = Boolean(checklistSummary?.vehicleHealthCheckPhotos?.valid);
   const hasSavedDriverPhotoChecklist = Boolean(checklistSummary?.driverPhoto?.valid);
@@ -96,6 +100,18 @@ export default function ChecklistStep4Page() {
     setConfirmVisible(false);
 
     if (!activeTrackerId || !canSubmit) return;
+
+    // Steps are not locked, so a part may have been skipped: go to it instead of submitting.
+    const missingStep = !checklistSummary?.exteriorPhotos?.valid ? 2 : !checklistSummary?.interiorPhotos?.valid ? 3 : undefined;
+
+    if (missingStep) {
+      toast.error(
+        missingStep === 2 ? "Exterior photos not finished" : "Interior not finished",
+        "Finish this part first, then submit your report.",
+      );
+      router.push(getChecklistStepRoute("preRide", activeTrackerId, missingStep));
+      return;
+    }
 
     try {
       if (!hasSavedVehicleHealthChecklist) {
@@ -174,6 +190,7 @@ export default function ChecklistStep4Page() {
     <>
       <ChecklistShell
         currentStep={4}
+        allowForward={!PRE_RIDE_STEP_LOCK_ENABLED}
         title="Health, Driver Photo & Submit"
         banner="Complete the vehicle health photos and driver photo, then submit your report."
         onStepPress={(step) => {
@@ -186,7 +203,7 @@ export default function ChecklistStep4Page() {
         footer={{
           children: checklistSummaryQuery.isError ? "Retry progress check" : isSubmitting ? "Submitting..." : "Submit Report",
           loading: isSubmitting,
-          disabled: !canSubmit && !checklistSummaryQuery.isError,
+          disabled: stepGate.blocked || (!canSubmit && !checklistSummaryQuery.isError),
           onClick: () => {
             if (checklistSummaryQuery.isError) {
               void checklistSummaryQuery.refetch();
@@ -196,6 +213,7 @@ export default function ChecklistStep4Page() {
           },
         }}
       >
+        {stepGate.notice}
         <ChecklistSectionTitle>Vehicle Health Check</ChecklistSectionTitle>
         {HEALTH_KEYS.map((key) => (
           <PhotoUploadCard

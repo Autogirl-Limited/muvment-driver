@@ -163,7 +163,7 @@ export default function ChecklistInvoicePage() {
           </section>
         )}
 
-        {selectedVehicle && (
+        {selectedVehicle && todayState === "NOT_STARTED" && (
           <div className="anim-fade-in mt-5 rounded-xl bg-success-soft p-4 text-success-text">
             <p className="text-body font-semibold">Vehicle selected</p>
             <p className="text-footnote mt-1">Proceed to the Pre Ride Pilot Report for {selectedVehicle.identifier}.</p>
@@ -176,9 +176,15 @@ export default function ChecklistInvoicePage() {
               Unable to verify today&apos;s report status. Check your connection and try again.
             </p>
           )}
-          {todayState && todayState !== "NOT_STARTED" && (
+          {todayState === "PRE_TRIP_IN_PROGRESS" && (
             <p role="alert" className="text-footnote mb-3 text-danger">
               Today&apos;s Pilot Report has already started. Return Home to resume it.
+            </p>
+          )}
+          {(todayState === "PRE_TRIP_COMPLETED" || todayState === "POST_TRIP_IN_PROGRESS" || todayState === "DAY_ENDED") && (
+            <p role="status" className="text-footnote mb-3 text-text-3">
+              Today&apos;s Pre Ride Pilot Report is already submitted, so a new one can&apos;t be started from here. You can
+              still look up the booking&apos;s vehicle above.
             </p>
           )}
           <Button

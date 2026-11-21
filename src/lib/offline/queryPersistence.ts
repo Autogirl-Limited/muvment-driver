@@ -3,6 +3,8 @@ import type { Query, QueryClient } from "@tanstack/react-query";
 import type { PersistQueryClientProviderProps } from "@tanstack/react-query-persist-client";
 import { del, get, set } from "idb-keyval";
 
+import { clearChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
+
 /**
  * Keeps the app's last loaded data on the phone (IndexedDB), so every screen
  * still shows what the driver last saw when they open the app with no signal.
@@ -59,7 +61,18 @@ const persister = createAsyncStoragePersister({
 });
 
 /** Query keys not worth keeping, or not wanted on disk. */
-const NEVER_PERSIST = new Set<string>(["push-subscription", "driver-bank-account-resolve"]);
+const NEVER_PERSIST = new Set<string>([
+  "push-subscription",
+  "driver-bank-account-resolve",
+  // Where today's pilot report stands changes within hours. A copy from the
+  // morning, restored in the evening (or on a bad connection), made Home offer
+  // the pre-ride report to a driver whose pre-ride was already submitted.
+  "today-checklist",
+  "checklist-trackers",
+  "pre-ride-checklist-summary",
+  "post-ride-checklist-aggregate",
+  "submitted-checklist-photos",
+]);
 
 const shouldPersist = (query: Query) =>
   query.state.status === "success" &&
@@ -75,6 +88,8 @@ export const persistOptions: PersistQueryClientProviderProps["persistOptions"] =
 
 /** Forgets everything saved and in memory (sign-out: the next driver on this phone must not see it). */
 export const clearOfflineCache = async (queryClient: QueryClient) => {
+  // The picked invoice vehicle belongs to the driver who signed in: don't leave it for the next one.
+  clearChecklistVehicleSelection();
   queryClient.clear();
   await persister.removeClient();
 };

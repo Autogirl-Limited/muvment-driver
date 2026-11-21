@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import L from "leaflet";
 import { MapContainer, Marker, Polyline, TileLayer, useMap, useMapEvents } from "react-leaflet";
-import { ChevronLeft, Flag, MapPin, Maximize2, Navigation, Phone } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronUp, Flag, MapPin, Maximize2, Navigation, Phone } from "lucide-react";
 
 import { fetchGoogleDrivingRoute, isGoogleRoutesConfigured, type GoogleRouteResult } from "@/lib/api/googleRoutes";
 import { useTripTracker } from "@/lib/tracking/useTripTracker";
@@ -230,6 +230,8 @@ export const TripNavigationView = ({
   const [arrivedAt, setArrivedAt] = useState<number | null>(() => (mode === "pickup" ? readPickupArrival(tripId) : null));
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [routeFetchedAt, setRouteFetchedAt] = useState(() => Date.now());
+  // Folds the bottom sheet down to its headline and buttons for a bigger map.
+  const [isSheetCollapsed, setSheetCollapsed] = useState(false);
   const isWaiting = arrivedAt !== null;
   const waitingSeconds = arrivedAt === null ? 0 : Math.max(0, Math.floor((nowMs - arrivedAt) / 1000));
   const [cameraMode, setCameraMode] = useState<CameraMode>("follow");
@@ -547,7 +549,7 @@ export const TripNavigationView = ({
           type="button"
           onClick={() => setCameraMode("follow")}
           className="glass pressable anim-rise-in absolute left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full px-4 py-2.5 shadow-float"
-          style={{ bottom: "calc(var(--safe-bottom) + 262px)" }}
+          style={{ bottom: `calc(var(--safe-bottom) + ${isSheetCollapsed ? 190 : 262}px)` }}
         >
           <Navigation size={15} className="text-accent" />
           <span className="text-footnote font-semibold text-text">Re-center</span>
@@ -569,7 +571,16 @@ export const TripNavigationView = ({
         className="absolute inset-x-0 bottom-0 z-10 rounded-t-[28px] bg-bg-elevated px-6 pt-3 shadow-sheet"
         style={{ paddingBottom: "calc(var(--safe-bottom) + 20px)" }}
       >
-        <div className="mx-auto mb-4 h-1.5 w-11 rounded-full bg-border-strong" />
+        <button
+          type="button"
+          onClick={() => setSheetCollapsed((value) => !value)}
+          aria-expanded={!isSheetCollapsed}
+          aria-label={isSheetCollapsed ? "Show trip details" : "Hide trip details"}
+          className="pressable-soft -mt-3 mb-1 flex w-full flex-col items-center gap-0.5 pt-3 pb-1"
+        >
+          <span className="h-1.5 w-11 rounded-full bg-border-strong" />
+          {isSheetCollapsed ? <ChevronUp size={16} className="text-text-3" /> : <ChevronDown size={16} className="text-text-3" />}
+        </button>
 
         <div className="flex items-start justify-between">
           <div className="min-w-0 flex-1 pr-3">
@@ -596,6 +607,7 @@ export const TripNavigationView = ({
           </span>
         </div>
 
+        {!isSheetCollapsed && (
         <div className="text-caption mt-1 flex flex-wrap items-center gap-x-2 text-text-4">
           <span>{routeHint}</span>
           {permissionState === "denied" && <span className="text-danger">Location permission needed</span>}
@@ -606,8 +618,9 @@ export const TripNavigationView = ({
             </a>
           )}
         </div>
+        )}
 
-        {nearPickup && (
+        {nearPickup && !isSheetCollapsed && (
           <div className="anim-rise-in mt-4 flex items-center gap-2 rounded-2xl border border-success/30 bg-success-soft px-4 py-3">
             <MapPin size={16} className="shrink-0 text-success" />
             <p className="text-footnote font-medium text-success-text">
@@ -616,9 +629,9 @@ export const TripNavigationView = ({
           </div>
         )}
 
-        {timerSlot && <div className="mt-4">{timerSlot}</div>}
+        {timerSlot && !isSheetCollapsed && <div className="mt-4">{timerSlot}</div>}
 
-        <div className="mt-5 flex items-center gap-4">
+        <div className={`flex items-center gap-4 ${isSheetCollapsed ? "mt-3" : "mt-5"}`}>
           <button
             type="button"
             onClick={onCall}
