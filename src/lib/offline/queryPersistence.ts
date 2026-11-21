@@ -61,7 +61,18 @@ const persister = createAsyncStoragePersister({
 });
 
 /** Query keys not worth keeping, or not wanted on disk. */
-const NEVER_PERSIST = new Set<string>(["push-subscription", "driver-bank-account-resolve"]);
+const NEVER_PERSIST = new Set<string>([
+  "push-subscription",
+  "driver-bank-account-resolve",
+  // Where today's pilot report stands changes within hours. A copy from the
+  // morning, restored in the evening (or on a bad connection), made Home offer
+  // the pre-ride report to a driver whose pre-ride was already submitted.
+  "today-checklist",
+  "checklist-trackers",
+  "pre-ride-checklist-summary",
+  "post-ride-checklist-aggregate",
+  "submitted-checklist-photos",
+]);
 
 const shouldPersist = (query: Query) =>
   query.state.status === "success" &&

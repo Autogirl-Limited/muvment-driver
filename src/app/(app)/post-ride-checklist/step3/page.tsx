@@ -1,36 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { ChecklistSectionTitle, ChecklistShell } from "@/components/checklist/ChecklistShell";
+import { DashboardReadingNote } from "@/components/checklist/AiPhotoNotes";
 import {
-  AnalysisReviewCard,
   DashboardAnalysisNotice,
   FeatureChips,
-  getInteriorAnalysisMetadata,
   isMetadataValid,
   parseNumericInput,
   ReadingsFields,
-  useDashboardAnalysisStatus,
 } from "@/components/checklist/InteriorStep";
 import { PhotoUploadCard } from "@/components/checklist/PhotoUploadCard";
 import { BackButton } from "@/components/ui/BackButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { NavBar, Screen } from "@/components/ui/Screen";
-import { usePhotoSlots } from "@/hooks/usePhotoSlot";
+import { useDashboardReadingFlow } from "@/hooks/useDashboardReadingFlow";
+import { useStepGate } from "@/hooks/useStepGate";
+import { clearPhotoDraft, usePhotoSlots } from "@/hooks/usePhotoSlot";
 import { getApiErrorMessage, isChecklistStepConflictError } from "@/lib/api/errors";
 import {
   usePostRideChecklistAggregate,
-  useReanalyzeInteriorChecklist,
   useSubmitInteriorChecklist,
-  useTodayChecklist,
   useUpdateInteriorMetadata,
   useVehicleFeatures,
 } from "@/lib/api/hooks/usePreRideChecklist";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
-import type { InteriorUploadImage, VehicleMetadata } from "@/lib/api/types";
-import { getChecklistStepRoute, getGuardedChecklistStepRoute, getPostRideGuardedStep } from "@/lib/utils/checklistNavigation";
+import type { InteriorUploadImage } from "@/lib/api/types";
+import { getChecklistStepRoute, getGuardedChecklistStepRoute } from "@/lib/utils/checklistNavigation";
+import { POST_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
 import { isChecklistPhotoUploaded, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
 import { usePersistentIdempotencyKey } from "@/lib/utils/persistentIdempotencyKey";
 import { useToast } from "@/providers/ToastProvider";
@@ -62,8 +61,6 @@ export default function PostRideStep3Page() {
   const aggregateQuery = usePostRideChecklistAggregate(activeTrackerId);
   const submitInteriorChecklist = useSubmitInteriorChecklist();
   const updateInteriorMetadata = useUpdateInteriorMetadata();
-  const reanalyzeInteriorChecklist = useReanalyzeInteriorChecklist();
-  const todayChecklistQuery = useTodayChecklist();
   const currentUserQuery = useCurrentUser();
   const vehicleFeaturesQuery = useVehicleFeatures(currentUserQuery.data?.data.vehicleId, { enabled: !currentUserQuery.isLoading });
   const aggregate = aggregateQuery.data?.data;
@@ -71,142 +68,91 @@ export default function PostRideStep3Page() {
   const savedMetadata = savedInteriorSummary?.metadata ?? aggregate?.postTripSummary?.vehicleMetadata;
   const hasSavedInteriorSubmission = savedInteriorSummary?.valid === true;
   const idempotencyKey = usePersistentIdempotencyKey(`post-trip-interior-${activeTrackerId}`);
-  const slots = usePhotoSlots(INTERIOR_KEYS);
+  const slots = usePhotoSlots(INTERIOR_KEYS, activeTrackerId ? `post-interior:${activeTrackerId}` : undefined);
   const [selectedFeatureId, setSelectedFeatureId] = useState<string>();
-  const [analysisMetadata, setAnalysisMetadata] = useState<VehicleMetadata | null>(null);
-  const [isAnalysisReviewVisible, setAnalysisReviewVisible] = useState(false);
-  const [odometer, setOdometer] = useState("");
-  const [fuelLevel, setFuelLevel] = useState("");
   const vehicleFeatures = (vehicleFeaturesQuery.data?.data ?? []).filter((feature) => feature.category !== "SAFETY_EQUIPMENT");
 
-  useEffect(() => {
-    if (!activeTrackerId || aggregateQuery.isFetching || !aggregate) return;
-    const guardedStep = getPostRideGuardedStep(3, aggregate);
-    if (guardedStep !== 3) {
-      router.replace(getChecklistStepRoute("postRide", activeTrackerId, guardedStep));
-    }
-  }, [activeTrackerId, aggregate, aggregateQuery.isFetching, router]);
+  const stepGate = useStepGate({
+    aggregate: aggregate,
+    flow: "postRide",
+    isError: aggregateQuery.isError,
+    isFetching: aggregateQuery.isFetching,
+    onRecheck: () => void aggregateQuery.refetch(),
+    step: 3,
+    trackerId: activeTrackerId,
+  });
 
-  const odometerKM = parseNumericInput(odometer);
-  const fuelLevelInPercentage = parseNumericInput(fuelLevel);
+  const dashboardPhoto = slots.photos.dashboard;
+  const hasDashboardUploaded = isChecklistPhotoUploaded(dashboardPhoto);
+  const readings = useDashboardReadingFlow({
+    checklistType: "POST_TRIP",
+    dashboardUploading: dashboardPhoto.status === "uploading",
+    dashboardUrl: isChecklistPhotoUploaded(dashboardPhoto) ? dashboardPhoto.fileUrl : undefined,
+    hasSavedSubmission: hasSavedInteriorSubmission,
+    savedMetadata,
+    trackerId: activeTrackerId || undefined,
+  });
+  const odometerKM = parseNumericInput(readings.odometer);
+  const fuelLevelInPercentage = parseNumericInput(readings.fuelLevel);
   const hasValidMetadata = isMetadataValid(odometerKM, fuelLevelInPercentage);
-  const hasDashboardUploaded = isChecklistPhotoUploaded(slots.photos.dashboard);
-  const isAnalyzing = submitInteriorChecklist.isPending || reanalyzeInteriorChecklist.isPending;
-  const analysis = useDashboardAnalysisStatus(isAnalyzing);
-  // Once the driver chooses manual entry they no longer wait on the AI.
-  const isSubmitting = updateInteriorMetadata.isPending || (isAnalyzing && !analysis.manual);
+  const isSubmitting = submitInteriorChecklist.isPending || updateInteriorMetadata.isPending;
   const isNextEnabled =
     Boolean(activeTrackerId) &&
     Boolean(aggregate) &&
-    (isAnalysisReviewVisible ? hasValidMetadata : hasSavedInteriorSubmission || hasDashboardUploaded) &&
+    (hasSavedInteriorSubmission || hasDashboardUploaded) &&
+    hasValidMetadata &&
+    !readings.isReadingPending &&
     !slots.hasPendingUpload &&
     !slots.hasFailedUpload &&
     !isSubmitting;
 
-  const showAnalysisReview = (metadata: VehicleMetadata | undefined) => {
-    if (!metadata) return false;
-    setAnalysisMetadata(metadata);
-    // Never overwrite what the driver typed after choosing manual entry.
-    if (!analysis.manualRef.current) {
-      setOdometer(typeof metadata.odometerKM === "number" ? String(metadata.odometerKM) : "");
-      setFuelLevel(typeof metadata.fuelLevelInPercentage === "number" ? String(metadata.fuelLevelInPercentage) : "");
-    }
-    setAnalysisReviewVisible(true);
-    analysis.clearFailed();
-    return true;
-  };
-
-  const enterReadingsManually = () => {
-    analysis.enterManually();
-    setAnalysisReviewVisible(true);
-  };
-
-  const reanalyzeDashboard = async () => {
-    const response = await reanalyzeInteriorChecklist.mutateAsync({ checklistType: "POST_TRIP", trackerId: activeTrackerId });
-
-    if (!showAnalysisReview(getInteriorAnalysisMetadata(response.data))) {
-      throw new Error("Dashboard analysis did not return odometer and fuel readings. Please retake the dashboard photo.");
-    }
-  };
-
-  const confirmAnalysis = async () => {
-    if (odometerKM === undefined || fuelLevelInPercentage === undefined) return;
-
-    await updateInteriorMetadata.mutateAsync({
-      payload: { checklistTrackerId: activeTrackerId, checklistType: "POST_TRIP", fuelLevelInPercentage, odometerKM },
-      trackerId: activeTrackerId,
-    });
-    router.push(getChecklistStepRoute("postRide", activeTrackerId, 4));
-  };
-
-  const recoverConflict = async () => {
-    const result = await todayChecklistQuery.refetch();
-    const today = result.data?.data;
-    const recoveredInterior = today?.postTripSummary?.interiorPhotos;
-
-    if (today?.checklistTrackerId?.trim() !== activeTrackerId || recoveredInterior?.valid !== true) {
-      return false;
-    }
-
-    if (!showAnalysisReview(recoveredInterior.metadata ?? today.postTripSummary?.vehicleMetadata)) {
-      await reanalyzeDashboard();
-    }
-
-    return true;
-  };
-
+  /** Saves the interior photos (once) and the readings as shown, then moves on. */
   const handleNext = async () => {
-    if (!activeTrackerId || !isNextEnabled) return;
-    analysis.clearFailed();
+    if (!activeTrackerId) return;
+    if (!hasSavedInteriorSubmission && !hasDashboardUploaded) {
+      toast.error("Dashboard photo needed", "Take the dashboard photo first.");
+      return;
+    }
+    if (!isNextEnabled || odometerKM === undefined || fuelLevelInPercentage === undefined) return;
 
     try {
-      if (isAnalysisReviewVisible) {
-        await confirmAnalysis();
-        return;
-      }
-      if (hasSavedInteriorSubmission) {
-        if (showAnalysisReview(savedMetadata)) return;
-        await reanalyzeDashboard();
-        return;
-      }
+      if (!hasSavedInteriorSubmission) {
+        const accessoryPhoto = slots.photos.accessories;
+        const accessoryUploadPhoto =
+          isChecklistPhotoUploaded(accessoryPhoto) && selectedFeatureId
+            ? { ...toChecklistUploadedPhoto(accessoryPhoto), interiorUploadImage: "ACCESSORIES" as const, publicCloudID: selectedFeatureId }
+            : undefined;
 
-      const accessoryPhoto = slots.photos.accessories;
-      const accessoryUploadPhoto =
-        isChecklistPhotoUploaded(accessoryPhoto) && selectedFeatureId
-          ? { ...toChecklistUploadedPhoto(accessoryPhoto), interiorUploadImage: "ACCESSORIES" as const, publicCloudID: selectedFeatureId }
-          : undefined;
-      const response = await submitInteriorChecklist.mutateAsync({
-        idempotencyKey,
-        payload: {
-          checklistTrackerId: activeTrackerId,
-          checklistType: "POST_TRIP",
-          uploadPhotos: [
-            ...PHOTO_KEYS.filter((key) => isChecklistPhotoUploaded(slots.photos[key])).map((key) => ({
-              ...toChecklistUploadedPhoto(slots.photos[key]),
-              interiorUploadImage: INTERIOR_IMAGE_TYPES[key],
-            })),
-            ...(accessoryUploadPhoto ? [accessoryUploadPhoto] : []),
-          ],
-        },
-        trackerId: activeTrackerId,
-      });
-
-      if (!showAnalysisReview(getInteriorAnalysisMetadata(response.data))) {
-        await reanalyzeDashboard();
-      }
-    } catch (error) {
-      if (isChecklistStepConflictError(error)) {
         try {
-          if (await recoverConflict()) return;
-        } catch {
-          // keep original error
+          await submitInteriorChecklist.mutateAsync({
+            idempotencyKey,
+            payload: {
+              checklistTrackerId: activeTrackerId,
+              checklistType: "POST_TRIP",
+              uploadPhotos: [
+                ...PHOTO_KEYS.filter((key) => isChecklistPhotoUploaded(slots.photos[key])).map((key) => ({
+                  ...toChecklistUploadedPhoto(slots.photos[key]),
+                  interiorUploadImage: INTERIOR_IMAGE_TYPES[key],
+                })),
+                ...(accessoryUploadPhoto ? [accessoryUploadPhoto] : []),
+              ],
+            },
+            trackerId: activeTrackerId,
+          });
+        } catch (error) {
+          // Already saved (a retry after a dropped response): carry on.
+          if (!isChecklistStepConflictError(error)) throw error;
         }
       }
-      if (!isAnalysisReviewVisible) analysis.markFailed();
-      toast.error(
-        isAnalysisReviewVisible ? "Dashboard correction failed" : "Interior photos failed",
-        getApiErrorMessage(error) ?? "Please try again.",
-      );
+
+      await updateInteriorMetadata.mutateAsync({
+        payload: { checklistTrackerId: activeTrackerId, checklistType: "POST_TRIP", fuelLevelInPercentage, odometerKM },
+        trackerId: activeTrackerId,
+      });
+      clearPhotoDraft(`post-interior:${activeTrackerId}`);
+      router.push(getChecklistStepRoute("postRide", activeTrackerId, 4));
+    } catch (error) {
+      toast.error("Couldn't save the interior", getApiErrorMessage(error) ?? "Please try again.");
     }
   };
 
@@ -222,22 +168,23 @@ export default function PostRideStep3Page() {
   return (
     <ChecklistShell
       currentStep={3}
+      allowForward={!POST_RIDE_STEP_LOCK_ENABLED}
       stepLabels={["Vehicle", "Exterior", "Interior", "Submit"]}
       title="Interior Photos"
-      banner="Capture the dashboard clearly. We will analyze the odometer and fuel readings before submission."
+      banner="Capture the dashboard clearly. We read the odometer and fuel level for you; check them, then confirm."
       onStepPress={(step) =>
         router.replace(getGuardedChecklistStepRoute({ aggregate, flow: "postRide", requestedStep: step, trackerId: activeTrackerId }))
       }
       footer={{
         children: aggregateQuery.isError
           ? "Retry progress check"
-          : isAnalyzing && !analysis.manual
-            ? "Analyzing dashboard..."
-            : isAnalysisReviewVisible
-              ? "Confirm readings"
-              : "Analyze dashboard",
-        loading: isSubmitting,
-        disabled: !isNextEnabled && !aggregateQuery.isError,
+          : isSubmitting
+            ? "Saving..."
+            : readings.isReadingPending
+              ? "Reading dashboard..."
+              : "Confirm readings",
+        loading: isSubmitting || readings.isReadingPending,
+        disabled: stepGate.blocked || (!isNextEnabled && !aggregateQuery.isError),
         onClick: () => {
           if (aggregateQuery.isError) {
             void aggregateQuery.refetch();
@@ -247,6 +194,7 @@ export default function PostRideStep3Page() {
         },
       }}
     >
+      {stepGate.notice}
       {PHOTO_KEYS.map((key) => (
         <PhotoUploadCard
           key={key}
@@ -294,22 +242,23 @@ export default function PostRideStep3Page() {
       )}
 
       <DashboardAnalysisNotice
-        analyzing={isAnalyzing}
-        failed={analysis.failed && hasDashboardUploaded}
-        manual={analysis.manual && !analysisMetadata}
-        slow={analysis.slow}
-        onManual={enterReadingsManually}
-        onRetry={() => void handleNext()}
+        analyzing={readings.isReadingPending}
+        failed={readings.failed}
+        manual={false}
+        slow={readings.slow}
+        onManual={readings.takeOver}
+        onRetry={readings.retry}
       />
 
-      {isAnalysisReviewVisible && analysisMetadata && (
-        <AnalysisReviewCard metadata={analysisMetadata} trackerId={activeTrackerId || undefined} checklistType="POST_TRIP">
-          <ReadingsFields odometer={odometer} fuelLevel={fuelLevel} onOdometerChange={setOdometer} onFuelLevelChange={setFuelLevel} />
-        </AnalysisReviewCard>
-      )}
-
-      {analysis.manual && !analysisMetadata && (
-        <ReadingsFields odometer={odometer} fuelLevel={fuelLevel} onOdometerChange={setOdometer} onFuelLevelChange={setFuelLevel} />
+      <ChecklistSectionTitle className="mt-2">Vehicle Readings</ChecklistSectionTitle>
+      <ReadingsFields
+        odometer={readings.odometer}
+        fuelLevel={readings.fuelLevel}
+        onOdometerChange={readings.setOdometer}
+        onFuelLevelChange={readings.setFuelLevel}
+      />
+      {(hasDashboardUploaded || hasSavedInteriorSubmission) && (
+        <DashboardReadingNote trackerId={activeTrackerId || undefined} checklistType="POST_TRIP" />
       )}
     </ChecklistShell>
   );

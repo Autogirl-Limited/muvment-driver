@@ -14,6 +14,7 @@ import {
   getGuardedChecklistStepRoute,
   getPreRideStarterStepRoute,
 } from "@/lib/utils/checklistNavigation";
+import { PRE_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
 import { readChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 
 export default function ChecklistStep1Page() {
@@ -51,6 +52,7 @@ export default function ChecklistStep1Page() {
   return (
     <ChecklistShell
       currentStep={1}
+      allowForward={!PRE_RIDE_STEP_LOCK_ENABLED}
       title="Pre Ride Pilot Report"
       onStepPress={(step) => {
         if (!hasVehicle && step > 1) return;
@@ -60,7 +62,7 @@ export default function ChecklistStep1Page() {
           );
           return;
         }
-        router.replace(getPreRideStarterStepRoute(Math.min(step, 2)));
+        router.replace(getPreRideStarterStepRoute(PRE_RIDE_STEP_LOCK_ENABLED ? Math.min(step, 2) : step));
       }}
       footer={{
         children: isCheckingProgress

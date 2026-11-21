@@ -8,6 +8,16 @@ export type ChecklistFlow = "postRide" | "preRide";
 const PRE_RIDE_STEP_COUNT = 4;
 const POST_RIDE_STEP_COUNT = 4;
 
+/**
+ * Same switches as the mobile app. When true, a step is locked behind the
+ * earlier ones: the stepper only goes back, and a step whose earlier part is not
+ * saved yet shows a notice (see useStepGate) with a way to finish that part or
+ * check again, instead of throwing the driver backwards. When false, any step
+ * can be opened and the server and the review screens catch what is missing.
+ */
+export const PRE_RIDE_STEP_LOCK_ENABLED = true;
+export const POST_RIDE_STEP_LOCK_ENABLED = true;
+
 const clampStep = (step: number, maxStep: number) =>
   Math.min(Math.max(Math.trunc(step), 1), maxStep);
 
@@ -85,18 +95,22 @@ export const getPostRideUnlockedStep = (
 export const getPreRideGuardedStep = (
   requestedStep: number,
   summary?: PreRideChecklistSummary,
-) => Math.min(
-  clampStep(requestedStep, PRE_RIDE_STEP_COUNT),
-  getPreRideUnlockedStep(summary),
-);
+) => PRE_RIDE_STEP_LOCK_ENABLED
+  ? Math.min(
+      clampStep(requestedStep, PRE_RIDE_STEP_COUNT),
+      getPreRideUnlockedStep(summary),
+    )
+  : clampStep(requestedStep, PRE_RIDE_STEP_COUNT);
 
 export const getPostRideGuardedStep = (
   requestedStep: number,
   aggregate?: PostRideChecklistAggregate,
-) => Math.min(
-  clampStep(requestedStep, POST_RIDE_STEP_COUNT),
-  getPostRideUnlockedStep(aggregate),
-);
+) => POST_RIDE_STEP_LOCK_ENABLED
+  ? Math.min(
+      clampStep(requestedStep, POST_RIDE_STEP_COUNT),
+      getPostRideUnlockedStep(aggregate),
+    )
+  : clampStep(requestedStep, POST_RIDE_STEP_COUNT);
 
 export const getGuardedChecklistStepRoute = ({
   aggregate,

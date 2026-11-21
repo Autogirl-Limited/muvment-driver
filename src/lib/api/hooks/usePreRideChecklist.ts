@@ -249,6 +249,9 @@ const invalidateChecklistQueries = (
   void queryClient.invalidateQueries({
     queryKey: TODAY_CHECKLIST_QUERY_KEY,
   });
+  void queryClient.invalidateQueries({
+    queryKey: ["submitted-checklist-photos", trackerId],
+  });
 };
 
 const withChecklistTimestamps = <
@@ -527,7 +530,9 @@ export const useSubmitInteriorChecklist = () => {
         ChecklistStepResponse,
         SubmitInteriorChecklistPayload
       >(
-        buildChecklistStepSubmitPath("interior"),
+        // The dashboard is read in the background; the screen follows the
+        // reading itself rather than waiting on this request.
+        `${buildChecklistStepSubmitPath("interior")}?waitForReading=false`,
         withChecklistTimestamps({
           ...payload,
           checklistTrackerId: payload.checklistTrackerId ?? trackerId,
@@ -593,7 +598,7 @@ export const useReanalyzeInteriorChecklist = () => {
         ChecklistStepResponse,
         { checklistType: ChecklistType }
       >(
-        buildChecklistTrackerPath(trackerId, "analyze"),
+        `${buildChecklistTrackerPath(trackerId, "analyze")}?waitForReading=false`,
         { checklistType },
       );
 

@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { ChecklistSectionTitle, ChecklistShell } from "@/components/checklist/ChecklistShell";
 import { PhotoInsightNote, SidePhotoCheck } from "@/components/checklist/AiPhotoNotes";
 import { PhotoStepper, toShotTileState, type PhotoStep } from "@/components/checklist/PhotoStepper";
 import { PhotoUploadCard } from "@/components/checklist/PhotoUploadCard";
+import { useStepGate } from "@/hooks/useStepGate";
 import { clearPhotoDraft, usePhotoList, usePhotoSlots } from "@/hooks/usePhotoSlot";
 import { getApiErrorMessage, isChecklistStepConflictError } from "@/lib/api/errors";
 import {
@@ -20,9 +21,9 @@ import type { ExteriorSide, ExteriorUploadImage } from "@/lib/api/types";
 import {
   getChecklistStepRoute,
   getGuardedChecklistStepRoute,
-  getPreRideGuardedStep,
   getPreRideStarterStepRoute,
 } from "@/lib/utils/checklistNavigation";
+import { PRE_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
 import { isChecklistPhotoUploaded, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
 import type { ChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import { readChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
@@ -104,13 +105,25 @@ export default function ChecklistStep2Page() {
     }
   }, [activeTrackerId, assignedVehicleQuery.data, assignedVehicleQuery.isError, assignedVehicleQuery.isLoading, currentUserId, router]);
 
+  const stepGate = useStepGate({
+    summary: checklistSummary,
+    flow: "preRide",
+    isError: checklistSummaryQuery.isError,
+    isFetching: checklistSummaryQuery.isFetching,
+    onRecheck: () => void checklistSummaryQuery.refetch(),
+    step: 2,
+    trackerId: activeTrackerId,
+  });
+
+  // Photos kept from an earlier try (the step was never saved) come back all at
+  // once: open on the last screen so one tap sends them, instead of walking
+  // through every photo again. Only on arrival, never mid-way through a fresh run.
+  const resumedAtEnd = useRef(false);
   useEffect(() => {
-    if (!activeTrackerId || checklistSummaryQuery.isFetching || !checklistSummary) return;
-    const guardedStep = getPreRideGuardedStep(2, checklistSummary);
-    if (guardedStep !== 2) {
-      router.replace(getChecklistStepRoute("preRide", activeTrackerId, guardedStep));
-    }
-  }, [activeTrackerId, checklistSummary, checklistSummaryQuery.isFetching, router]);
+    if (resumedAtEnd.current || current !== 0 || !required.list.every(isChecklistPhotoUploaded)) return;
+    resumedAtEnd.current = true;
+    setCurrent(stepOrder.length - 1);
+  }, [current, required.list, stepOrder.length]);
 
   const requiredList = required.list;
   const hasPendingUpload = required.hasPendingUpload || damage.hasPendingUpload;
@@ -227,6 +240,7 @@ export default function ChecklistStep2Page() {
   return (
     <ChecklistShell
       currentStep={2}
+      allowForward={!PRE_RIDE_STEP_LOCK_ENABLED}
       title="Exterior Photos"
       banner="Capture all exterior angles before moving to the interior checklist."
       onStepPress={(step) => {
@@ -236,7 +250,7 @@ export default function ChecklistStep2Page() {
           );
           return;
         }
-        router.replace(getPreRideStarterStepRoute(Math.min(step, 2)));
+        router.replace(getPreRideStarterStepRoute(PRE_RIDE_STEP_LOCK_ENABLED ? Math.min(step, 2) : step));
       }}
       footer={{
         children: isDamageStep
@@ -249,7 +263,7 @@ export default function ChecklistStep2Page() {
             ? "Uploading..."
             : "Next Photo",
         loading: isDamageStep ? isSubmitting : photoSteps[current].state === "uploading",
-        disabled: !isDamageStep && !["uploaded", "saved"].includes(photoSteps[current].state),
+        disabled: stepGate.blocked || (!isDamageStep && !["uploaded", "saved"].includes(photoSteps[current].state)),
         onClick: () => {
           if (!isDamageStep) {
             setCurrent((value) => Math.min(value + 1, stepOrder.length - 1));
@@ -263,6 +277,7 @@ export default function ChecklistStep2Page() {
         },
       }}
     >
+      {stepGate.notice}
       <PhotoStepper steps={photoSteps} current={current} onSelect={setCurrent} />
 
       <div key={stepOrder[current]} className="anim-fade-in mt-5">
