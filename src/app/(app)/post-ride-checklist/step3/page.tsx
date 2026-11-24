@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { ChecklistSectionTitle, ChecklistShell } from "@/components/checklist/ChecklistShell";
@@ -21,15 +21,17 @@ import { useStepGate } from "@/hooks/useStepGate";
 import { clearPhotoDraft, usePhotoSlots } from "@/hooks/usePhotoSlot";
 import { getApiErrorMessage, isChecklistStepConflictError } from "@/lib/api/errors";
 import {
+  submittedImagesFor,
   usePostRideChecklistAggregate,
   useSubmitInteriorChecklist,
+  useSubmittedChecklistPhotos,
   useUpdateInteriorMetadata,
   useVehicleFeatures,
 } from "@/lib/api/hooks/usePreRideChecklist";
 import type { InteriorUploadImage } from "@/lib/api/types";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute } from "@/lib/utils/checklistNavigation";
 import { POST_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
-import { isChecklistPhotoUploaded, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
+import { isChecklistPhotoUploaded, pickSubmittedImages, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
 import { usePersistentIdempotencyKey } from "@/lib/utils/persistentIdempotencyKey";
 import { useToast } from "@/providers/ToastProvider";
 
@@ -71,6 +73,17 @@ export default function PostRideStep3Page() {
   const [selectedFeatureId, setSelectedFeatureId] = useState<string>();
   const vehicleFeatures = (vehicleFeaturesQuery.data?.data ?? []).filter((feature) => feature.category !== "SAFETY_EQUIPMENT");
 
+  // Saved on another phone (or this one lost its copy): show what was submitted.
+  const submittedQuery = useSubmittedChecklistPhotos(activeTrackerId || undefined, { enabled: hasSavedInteriorSubmission });
+  const { restore: restoreSlots } = slots;
+  useEffect(() => {
+    const images = submittedImagesFor(submittedQuery.data, "INTERIOR", "POST_TRIP");
+    if (images.length === 0) return;
+    restoreSlots(pickSubmittedImages(images, INTERIOR_IMAGE_TYPES));
+    const featureId = images.find((image) => image.type === "ACCESSORIES" && image.publicId)?.publicId ?? undefined;
+    setSelectedFeatureId((prev) => prev ?? featureId);
+  }, [restoreSlots, submittedQuery.data]);
+
   const stepGate = useStepGate({
     aggregate: aggregate,
     flow: "postRide",
@@ -86,7 +99,8 @@ export default function PostRideStep3Page() {
   const readings = useDashboardReadingFlow({
     checklistType: "POST_TRIP",
     dashboardUploading: dashboardPhoto.status === "uploading",
-    dashboardUrl: isChecklistPhotoUploaded(dashboardPhoto) ? dashboardPhoto.fileUrl : undefined,
+    // A dashboard shown from the server was already read: it must not start a new reading.
+    dashboardUrl: isChecklistPhotoUploaded(dashboardPhoto) && !slots.isRestored(dashboardPhoto) ? dashboardPhoto.fileUrl : undefined,
     hasSavedSubmission: hasSavedInteriorSubmission,
     savedMetadata,
     trackerId: activeTrackerId || undefined,

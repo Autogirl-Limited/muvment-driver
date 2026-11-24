@@ -5,8 +5,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import {
   createEmptyChecklistPhoto,
+  createUploadedChecklistPhoto,
   isChecklistPhotoUploaded,
   type ChecklistPhotoState,
+  type SubmittedImage,
 } from "@/lib/utils/checklistPhotos";
 import { capturePhoto, type CameraFacing } from "@/lib/utils/deviceActions";
 import {
@@ -67,6 +69,7 @@ export const usePhotoSlots = <TKey extends string>(keys: readonly TKey[], persis
   );
   const files = useRef(new Map<TKey, File>());
   const hydratedKey = useRef<string | undefined>(undefined);
+  const restoredUrls = useRef(new Set<string>());
 
   // Bring back photos saved for this report, once.
   useEffect(() => {
@@ -100,6 +103,28 @@ export const usePhotoSlots = <TKey extends string>(keys: readonly TKey[], persis
 
   const update = useCallback((key: TKey, next: ChecklistPhotoState) => {
     setPhotos((current) => ({ ...current, [key]: next }));
+  }, []);
+
+  /**
+   * Show photos the server already holds for a submitted step (another phone,
+   * a cleared browser). Only empty slots are filled.
+   */
+  const restore = useCallback((entries: Partial<Record<TKey, SubmittedImage>>) => {
+    setPhotos((current) => {
+      const next = { ...current };
+      let changed = false;
+
+      (Object.keys(entries) as TKey[]).forEach((key) => {
+        const image = entries[key];
+        if (image && key in next && next[key].status === "empty") {
+          next[key] = createUploadedChecklistPhoto(image.url, image.publicId ?? undefined);
+          restoredUrls.current.add(image.url);
+          changed = true;
+        }
+      });
+
+      return changed ? next : current;
+    });
   }, []);
 
   const capture = useCallback(
@@ -186,6 +211,9 @@ export const usePhotoSlots = <TKey extends string>(keys: readonly TKey[], persis
     list,
     capture,
     remove,
+    restore,
+    /** True for a photo shown from the server, not taken on this phone. */
+    isRestored: (photo: ChecklistPhotoState) => Boolean(photo.fileUrl && restoredUrls.current.has(photo.fileUrl)),
     hasPendingUpload: list.some((photo) => photo.status === "uploading"),
     hasFailedUpload: list.some((photo) => photo.status === "failed"),
     subtitleFor: (key: TKey, fallback: string) => {
@@ -205,6 +233,20 @@ export const usePhotoList = (max: number, persistKey?: string) => {
   const [photos, setPhotos] = useState<ChecklistPhotoState[]>([]);
   const files = useRef<(File | undefined)[]>([]);
   const hydratedKey = useRef<string | undefined>(undefined);
+  const restoredUrls = useRef(new Set<string>());
+
+  /** Show photos the server already holds (another phone, a cleared browser), if there are none yet. */
+  const restore = useCallback(
+    (images: SubmittedImage[]) => {
+      if (images.length === 0) return;
+      setPhotos((current) => {
+        if (current.length > 0) return current;
+        images.slice(0, max).forEach((image) => restoredUrls.current.add(image.url));
+        return images.slice(0, max).map((image) => createUploadedChecklistPhoto(image.url, image.publicId ?? undefined));
+      });
+    },
+    [max],
+  );
 
   useEffect(() => {
     if (!persistKey || hydratedKey.current === persistKey) return;
@@ -307,6 +349,8 @@ export const usePhotoList = (max: number, persistKey?: string) => {
     add,
     retake,
     remove,
+    restore,
+    isRestored: (photo: ChecklistPhotoState) => Boolean(photo.fileUrl && restoredUrls.current.has(photo.fileUrl)),
     hasPendingUpload: photos.some((photo) => photo.status === "uploading"),
     hasFailedUpload: photos.some((photo) => photo.status === "failed"),
     subtitleFor: (photo: ChecklistPhotoState, fallback: string) => {

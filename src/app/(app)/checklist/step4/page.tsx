@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Camera, X } from "lucide-react";
 
@@ -13,9 +13,11 @@ import { useStepGate } from "@/hooks/useStepGate";
 import { clearPhotoDraft, usePhotoMap, usePhotoSlots } from "@/hooks/usePhotoSlot";
 import { getApiErrorMessage, isChecklistStepConflictError } from "@/lib/api/errors";
 import {
+  submittedImagesFor,
   usePreRideChecklistSummary,
   useSubmitChecklist,
   useSubmitDriverPhotoChecklist,
+  useSubmittedChecklistPhotos,
   useSubmitVehicleHealthChecklist,
   useTodayChecklist,
   useVehicleFeatures,
@@ -24,7 +26,7 @@ import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import type { PhotoInsightKind, VehicleFeature, VehicleHealthCheckPhoto } from "@/lib/api/types";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute } from "@/lib/utils/checklistNavigation";
 import { PRE_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
-import { isChecklistPhotoUploaded, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
+import { isChecklistPhotoUploaded, pickSubmittedImages, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
 import { clearChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import { usePersistentIdempotencyKey } from "@/lib/utils/persistentIdempotencyKey";
 import { useToast } from "@/providers/ToastProvider";
@@ -111,6 +113,20 @@ export default function ChecklistStep4Page() {
 
   const hasSavedVehicleHealthChecklist = Boolean(checklistSummary?.vehicleHealthCheckPhotos?.valid);
   const hasSavedDriverPhotoChecklist = Boolean(checklistSummary?.driverPhoto?.valid);
+
+  // Saved on another phone (or this one lost its copy): show what was submitted.
+  // Like the mobile app, the first safety photo fills the group photo slot.
+  const submittedQuery = useSubmittedChecklistPhotos(activeTrackerId || undefined, {
+    enabled: hasSavedVehicleHealthChecklist || hasSavedDriverPhotoChecklist,
+  });
+  const { restore: restoreHealth } = health;
+  const { restore: restoreSelfie } = selfieSlot;
+  useEffect(() => {
+    if (!submittedQuery.data) return;
+    restoreHealth(pickSubmittedImages(submittedImagesFor(submittedQuery.data, "VEHICLE_HEALTH_CHECK", "PRE_TRIP"), HEALTH_PHOTO_TYPES));
+    const selfieImage = submittedImagesFor(submittedQuery.data, "DRIVER_PHOTO", "PRE_TRIP")[0];
+    if (selfieImage) restoreSelfie({ selfie: selfieImage });
+  }, [restoreHealth, restoreSelfie, submittedQuery.data]);
   const hasPendingUpload = health.hasPendingUpload || selfieSlot.hasPendingUpload || safetyItemSlots.hasPendingUpload;
   const hasFailedUpload = health.hasFailedUpload || selfieSlot.hasFailedUpload || safetyItemSlots.hasFailedUpload;
   const isSubmitting = submitVehicleHealthChecklist.isPending || submitDriverPhotoChecklist.isPending || submitChecklist.isPending;
