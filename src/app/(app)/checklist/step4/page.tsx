@@ -47,14 +47,15 @@ const HEALTH_PHOTO_TYPES: Record<HealthKey, VehicleHealthCheckPhoto> = {
 const HEALTH_LABELS: Record<HealthKey, { title: string; subtitle: string }> = {
   oilLevel: { title: "Oil Level", subtitle: "Dipstick showing oil level between min/max" },
   coolantLevel: { title: "Coolant Level", subtitle: "Reservoir showing fluid level" },
-  safetyEquipment: { title: "Safety Equipment", subtitle: "First Aid Kit, Warning Triangle, Fire Extinguisher" },
+  safetyEquipment: { title: "Safety Equipment", subtitle: "Warning Triangle, Fire Extinguisher" },
 };
 /** Shown if the Safety Equipment features can't be loaded (same as the mobile app). */
 const FALLBACK_SAFETY_ITEMS: VehicleFeature[] = [
-  { id: "first-aid-kit", name: "First Aid Kit", category: "SAFETY_EQUIPMENT", description: "Basic medical supplies for treating minor injuries on the road." },
   { id: "warning-triangle", name: "Warning Triangle", category: "SAFETY_EQUIPMENT", description: "Reflective triangle placed behind the car to warn traffic of a breakdown." },
   { id: "fire-extinguisher", name: "Fire Extinguisher", category: "SAFETY_EQUIPMENT", description: "Portable extinguisher for putting out a small fire in or around the car." },
 ];
+const isRequiredSafetyItem = (feature: VehicleFeature) =>
+  feature.name.replace(/[^a-z0-9]/gi, "").toLowerCase() !== "firstaidkit";
 const joinNames = (names: string[]) =>
   names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 const SELFIE_REQUIREMENTS = [
@@ -86,7 +87,7 @@ export default function ChecklistStep4Page() {
   // The safety items to photograph come from the vehicle feature catalogue.
   const vehicleFeaturesQuery = useVehicleFeatures(undefined);
   const loadedSafetyItems = (vehicleFeaturesQuery.data?.data ?? [])
-    .filter((feature) => feature.category === "SAFETY_EQUIPMENT")
+    .filter((feature) => feature.category === "SAFETY_EQUIPMENT" && isRequiredSafetyItem(feature))
     .sort((a, b) => a.name.localeCompare(b.name));
   const safetyItems = loadedSafetyItems.length > 0 ? loadedSafetyItems : FALLBACK_SAFETY_ITEMS;
   // Optional: one photo per safety item, instead of (or as well as) the group photo.
