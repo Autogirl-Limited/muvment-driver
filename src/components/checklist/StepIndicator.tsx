@@ -6,6 +6,8 @@ interface StepIndicatorProps {
   currentStep: number;
   totalSteps?: number;
   onStepPress?: (step: number) => void;
+  /** Also let the driver tap steps ahead of the current one (steps are not locked). */
+  allowForward?: boolean;
   /** Short names shown under each circle (index 0 is step 1). */
   labels?: string[];
 }
@@ -14,7 +16,7 @@ interface StepIndicatorProps {
  * Numbered circles joined by a line, with the name under each. Green tick =
  * done, blue = the one you're on. Tap a done step to go back to it.
  */
-export const StepIndicator = ({ currentStep, totalSteps = 4, onStepPress, labels }: StepIndicatorProps) => {
+export const StepIndicator = ({ currentStep, totalSteps = 4, onStepPress, allowForward = false, labels }: StepIndicatorProps) => {
   const steps = Array.from({ length: totalSteps }, (_, index) => index + 1);
 
   return (
@@ -22,7 +24,7 @@ export const StepIndicator = ({ currentStep, totalSteps = 4, onStepPress, labels
       {steps.map((step, index) => {
         const isDone = step < currentStep;
         const isActive = step === currentStep;
-        const isSelectable = Boolean(onStepPress) && step <= currentStep;
+        const isSelectable = Boolean(onStepPress) && (allowForward || step <= currentStep);
 
         return (
           <button

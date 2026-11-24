@@ -250,7 +250,8 @@ export default function HomePage() {
             </button>
           )}
 
-          {todayChecklistState === "NOT_STARTED" && !todayChecklistTrackerId && (
+          {/* Also after the pre-ride is sent: the booking's vehicle can still be looked up. */}
+          {((todayChecklistState === "NOT_STARTED" && !todayChecklistTrackerId) || shouldShowPostRidePilotReport) && (
             <button
               type="button"
               onClick={() => router.push("/checklist/invoice")}
