@@ -223,7 +223,7 @@ export default function PostRideStep3Page() {
 
       {vehicleFeatures.length > 0 && (
         <>
-          <ChecklistSectionTitle className="mt-2">Accessory Feature (Optional)</ChecklistSectionTitle>
+          <ChecklistSectionTitle className="mt-2">Accessory Feature</ChecklistSectionTitle>
           <FeatureChips
             features={vehicleFeatures}
             selectedIds={selectedFeatureId ? [selectedFeatureId] : []}
