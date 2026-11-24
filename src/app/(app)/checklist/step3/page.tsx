@@ -18,19 +18,17 @@ import { useStepGate } from "@/hooks/useStepGate";
 import { clearPhotoDraft, usePhotoSlots } from "@/hooks/usePhotoSlot";
 import { getApiErrorMessage, isChecklistStepConflictError } from "@/lib/api/errors";
 import {
+  submittedImagesFor,
   usePreRideChecklistSummary,
   useSubmitInteriorChecklist,
+  useSubmittedChecklistPhotos,
   useUpdateInteriorMetadata,
-  useAssignedVehicle,
   useVehicleFeatures,
 } from "@/lib/api/hooks/usePreRideChecklist";
-import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import type { InteriorUploadImage } from "@/lib/api/types";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute } from "@/lib/utils/checklistNavigation";
 import { PRE_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
-import { isChecklistPhotoUploaded, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
-import type { ChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
-import { readChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
+import { isChecklistPhotoUploaded, pickSubmittedImages, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
 import { usePersistentIdempotencyKey } from "@/lib/utils/persistentIdempotencyKey";
 import { useToast } from "@/providers/ToastProvider";
 
@@ -62,28 +60,27 @@ export default function ChecklistStep3Page() {
   const submitInteriorChecklist = useSubmitInteriorChecklist();
   const updateInteriorMetadata = useUpdateInteriorMetadata();
   const idempotencyKey = usePersistentIdempotencyKey(`pre-trip-interior-${activeTrackerId}`);
-  const currentUserQuery = useCurrentUser();
-  const [vehicleSelection, setVehicleSelection] = useState<ChecklistVehicleSelection>();
   const checklistSummaryQuery = usePreRideChecklistSummary(activeTrackerId);
   const checklistSummary = checklistSummaryQuery.data?.data;
-  const assignedVehicleQuery = useAssignedVehicle();
-  const selectedVehicleId =
-    checklistSummary?.vehicleInfo?.vehicleId ??
-    vehicleSelection?.vehicle.id ??
-    assignedVehicleQuery.data?.id ??
-    currentUserQuery.data?.data.vehicleId;
-  const vehicleFeaturesQuery = useVehicleFeatures(selectedVehicleId, {
-    enabled: !currentUserQuery.isLoading && !assignedVehicleQuery.isLoading,
-  });
+  // The full accessories catalogue, same as the mobile app: the driver photographs
+  // whichever features the car has. Not per vehicle id, which can come back empty.
+  const vehicleFeaturesQuery = useVehicleFeatures(undefined);
   const savedMetadata = checklistSummary?.interiorPhotos?.metadata;
   const hasSavedInteriorSubmission = checklistSummary?.interiorPhotos?.valid === true;
   const slots = usePhotoSlots(INTERIOR_KEYS, activeTrackerId ? `interior:${activeTrackerId}` : undefined);
   const [selectedFeatureIds, setSelectedFeatureIds] = useState<string[]>([]);
   const vehicleFeatures = (vehicleFeaturesQuery.data?.data ?? []).filter((feature) => feature.category !== "SAFETY_EQUIPMENT");
 
+  // Saved on another phone (or this one lost its copy): show what was submitted.
+  const submittedQuery = useSubmittedChecklistPhotos(activeTrackerId || undefined, { enabled: hasSavedInteriorSubmission });
+  const { restore: restoreSlots } = slots;
   useEffect(() => {
-    setVehicleSelection(readChecklistVehicleSelection(currentUserQuery.data?.data.userId));
-  }, [currentUserQuery.data?.data.userId]);
+    const images = submittedImagesFor(submittedQuery.data, "INTERIOR", "PRE_TRIP");
+    if (images.length === 0) return;
+    restoreSlots(pickSubmittedImages(images, INTERIOR_IMAGE_TYPES));
+    const featureIds = images.flatMap((image) => (image.type === "ACCESSORIES" && image.publicId ? [image.publicId] : []));
+    setSelectedFeatureIds((prev) => (prev.length > 0 || featureIds.length === 0 ? prev : [...new Set(featureIds)]));
+  }, [restoreSlots, submittedQuery.data]);
 
   const stepGate = useStepGate({
     summary: checklistSummary,
@@ -100,7 +97,8 @@ export default function ChecklistStep3Page() {
   const readings = useDashboardReadingFlow({
     checklistType: "PRE_TRIP",
     dashboardUploading: dashboardPhoto.status === "uploading",
-    dashboardUrl: isChecklistPhotoUploaded(dashboardPhoto) ? dashboardPhoto.fileUrl : undefined,
+    // A dashboard shown from the server was already read: it must not start a new reading.
+    dashboardUrl: isChecklistPhotoUploaded(dashboardPhoto) && !slots.isRestored(dashboardPhoto) ? dashboardPhoto.fileUrl : undefined,
     hasSavedSubmission: hasSavedInteriorSubmission,
     savedMetadata,
     trackerId: activeTrackerId || undefined,

@@ -831,3 +831,10 @@ export const useSubmittedChecklistPhotos = (
     enabled: Boolean(trackerId) && (options.enabled ?? true),
     staleTime: 60_000,
   });
+
+/** The submitted photos of one step, by slot (FRONT, DASHBOARD...). */
+export const submittedImagesFor = (
+  submitted: SubmittedChecklistPhotos | null | undefined,
+  step: string,
+  type: ChecklistType,
+) => submitted?.steps.find((s) => s.step === step && s.type === type)?.images ?? [];

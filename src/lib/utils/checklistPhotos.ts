@@ -17,6 +17,28 @@ export interface ChecklistPhotoState {
   status: ChecklistPhotoUploadStatus;
 }
 
+/** A photo the server already holds for a submitted step. */
+export interface SubmittedImage {
+  publicId?: string | null;
+  type: string;
+  url: string;
+}
+
+/** The first submitted image of each slot, by the slot type the server uses. */
+export const pickSubmittedImages = <TKey extends string>(
+  images: SubmittedImage[],
+  typeByKey: Record<TKey, string>,
+): Partial<Record<TKey, SubmittedImage>> => {
+  const picked: Partial<Record<TKey, SubmittedImage>> = {};
+
+  (Object.keys(typeByKey) as TKey[]).forEach((key) => {
+    const image = images.find((item) => item.type === typeByKey[key]);
+    if (image) picked[key] = image;
+  });
+
+  return picked;
+};
+
 export const createEmptyChecklistPhoto = (): ChecklistPhotoState => ({
   localUri: null,
   status: "empty",

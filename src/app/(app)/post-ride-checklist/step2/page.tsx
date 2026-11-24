@@ -14,15 +14,17 @@ import { useStepGate } from "@/hooks/useStepGate";
 import { clearPhotoDraft, usePhotoList, usePhotoSlots } from "@/hooks/usePhotoSlot";
 import { getApiErrorMessage, isChecklistStepConflictError } from "@/lib/api/errors";
 import {
+  submittedImagesFor,
   usePostRideChecklistAggregate,
   useSubmitExteriorChecklist,
+  useSubmittedChecklistPhotos,
   useTodayChecklist,
 } from "@/lib/api/hooks/usePreRideChecklist";
 import type { ExteriorSide, ExteriorUploadImage } from "@/lib/api/types";
 import { POST_RIDE_DAMAGE_CONFIG, POST_RIDE_EXTERIOR_PHOTOS } from "@/lib/data/tripTimeline";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute } from "@/lib/utils/checklistNavigation";
 import { POST_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
-import { isChecklistPhotoUploaded, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
+import { isChecklistPhotoUploaded, pickSubmittedImages, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
 import { usePersistentIdempotencyKey } from "@/lib/utils/persistentIdempotencyKey";
 import { useToast } from "@/providers/ToastProvider";
 
@@ -49,6 +51,17 @@ export default function PostRideStep2Page() {
   const [current, setCurrent] = useState(0);
   const required = usePhotoSlots(REQUIRED_KEYS, activeTrackerId ? `post-exterior:${activeTrackerId}` : undefined);
   const damage = usePhotoList(POST_RIDE_DAMAGE_CONFIG.maxPhotos, activeTrackerId ? `post-exterior-damage:${activeTrackerId}` : undefined);
+
+  // Saved on another phone (or this one lost its copy): show what was submitted.
+  const submittedQuery = useSubmittedChecklistPhotos(activeTrackerId || undefined, { enabled: hasSavedExteriorChecklist });
+  const { restore: restoreRequired } = required;
+  const { restore: restoreDamage } = damage;
+  useEffect(() => {
+    const images = submittedImagesFor(submittedQuery.data, "EXTERIOR", "POST_TRIP");
+    if (images.length === 0) return;
+    restoreRequired(pickSubmittedImages(images, REQUIRED_IMAGE_TYPES));
+    restoreDamage(images.filter((image) => image.type === "DAMAGE"));
+  }, [restoreDamage, restoreRequired, submittedQuery.data]);
   const photoSteps: PhotoStep[] = [
     ...POST_RIDE_EXTERIOR_PHOTOS.map((photo) => ({
       key: photo.id,
@@ -79,10 +92,10 @@ export default function PostRideStep2Page() {
   // through every photo again. Only on arrival, never mid-way through a fresh run.
   const resumedAtEnd = useRef(false);
   useEffect(() => {
-    if (resumedAtEnd.current || current !== 0 || !required.list.every(isChecklistPhotoUploaded)) return;
+    if (resumedAtEnd.current || hasSavedExteriorChecklist || current !== 0 || !required.list.every(isChecklistPhotoUploaded)) return;
     resumedAtEnd.current = true;
     setCurrent(photoSteps.length - 1);
-  }, [current, photoSteps.length, required.list]);
+  }, [current, hasSavedExteriorChecklist, photoSteps.length, required.list]);
 
   const isNextEnabled =
     (hasSavedExteriorChecklist || required.list.every(isChecklistPhotoUploaded)) &&

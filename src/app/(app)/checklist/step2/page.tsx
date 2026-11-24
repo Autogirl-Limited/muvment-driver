@@ -11,9 +11,11 @@ import { useStepGate } from "@/hooks/useStepGate";
 import { clearPhotoDraft, usePhotoList, usePhotoSlots } from "@/hooks/usePhotoSlot";
 import { getApiErrorMessage, isChecklistStepConflictError } from "@/lib/api/errors";
 import {
+  submittedImagesFor,
   useAssignedVehicle,
   usePreRideChecklistSummary,
   useSubmitExteriorChecklist,
+  useSubmittedChecklistPhotos,
   useTodayChecklist,
 } from "@/lib/api/hooks/usePreRideChecklist";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
@@ -24,7 +26,7 @@ import {
   getPreRideStarterStepRoute,
 } from "@/lib/utils/checklistNavigation";
 import { PRE_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
-import { isChecklistPhotoUploaded, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
+import { isChecklistPhotoUploaded, pickSubmittedImages, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
 import type { ChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import { readChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import { toLagosDate } from "@/lib/utils/lagosTime";
@@ -76,6 +78,17 @@ export default function ChecklistStep2Page() {
   const required = usePhotoSlots(REQUIRED_KEYS, draftScope ? `exterior:${draftScope}` : undefined);
   const damage = usePhotoList(3, draftScope ? `exterior-damage:${draftScope}` : undefined);
 
+  // Saved on another phone (or this one lost its copy): show what was submitted.
+  const submittedQuery = useSubmittedChecklistPhotos(activeTrackerId || undefined, { enabled: hasSavedExteriorChecklist });
+  const { restore: restoreRequired } = required;
+  const { restore: restoreDamage } = damage;
+  useEffect(() => {
+    const images = submittedImagesFor(submittedQuery.data, "EXTERIOR", "PRE_TRIP");
+    if (images.length === 0) return;
+    restoreRequired(pickSubmittedImages(images, REQUIRED_IMAGE_TYPES));
+    restoreDamage(images.filter((image) => image.type === "DAMAGE"));
+  }, [restoreDamage, restoreRequired, submittedQuery.data]);
+
   const stepOrder: Array<RequiredKey | "damage"> = [...REQUIRED_KEYS, "damage"];
   const photoSteps: PhotoStep[] = [
     ...REQUIRED_KEYS.map((key) => ({
@@ -120,10 +133,10 @@ export default function ChecklistStep2Page() {
   // through every photo again. Only on arrival, never mid-way through a fresh run.
   const resumedAtEnd = useRef(false);
   useEffect(() => {
-    if (resumedAtEnd.current || current !== 0 || !required.list.every(isChecklistPhotoUploaded)) return;
+    if (resumedAtEnd.current || hasSavedExteriorChecklist || current !== 0 || !required.list.every(isChecklistPhotoUploaded)) return;
     resumedAtEnd.current = true;
     setCurrent(stepOrder.length - 1);
-  }, [current, required.list, stepOrder.length]);
+  }, [current, hasSavedExteriorChecklist, required.list, stepOrder.length]);
 
   const requiredList = required.list;
   const hasPendingUpload = required.hasPendingUpload || damage.hasPendingUpload;
@@ -181,7 +194,11 @@ export default function ChecklistStep2Page() {
     }
 
     // Nothing freshly captured: skip straight ahead instead of re-submitting.
-    if (activeTrackerId && hasSavedExteriorChecklist && !requiredList.some(isChecklistPhotoUploaded)) {
+    if (
+      activeTrackerId &&
+      hasSavedExteriorChecklist &&
+      !requiredList.some((photo) => isChecklistPhotoUploaded(photo) && !required.isRestored(photo))
+    ) {
       router.push(getChecklistStepRoute("preRide", activeTrackerId, 3));
       return;
     }

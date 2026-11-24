@@ -5,8 +5,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import {
   createEmptyChecklistPhoto,
+  createUploadedChecklistPhoto,
   isChecklistPhotoUploaded,
   type ChecklistPhotoState,
+  type SubmittedImage,
 } from "@/lib/utils/checklistPhotos";
 import { capturePhoto, type CameraFacing } from "@/lib/utils/deviceActions";
 import {
@@ -67,6 +69,7 @@ export const usePhotoSlots = <TKey extends string>(keys: readonly TKey[], persis
   );
   const files = useRef(new Map<TKey, File>());
   const hydratedKey = useRef<string | undefined>(undefined);
+  const restoredUrls = useRef(new Set<string>());
 
   // Bring back photos saved for this report, once.
   useEffect(() => {
@@ -100,6 +103,28 @@ export const usePhotoSlots = <TKey extends string>(keys: readonly TKey[], persis
 
   const update = useCallback((key: TKey, next: ChecklistPhotoState) => {
     setPhotos((current) => ({ ...current, [key]: next }));
+  }, []);
+
+  /**
+   * Show photos the server already holds for a submitted step (another phone,
+   * a cleared browser). Only empty slots are filled.
+   */
+  const restore = useCallback((entries: Partial<Record<TKey, SubmittedImage>>) => {
+    setPhotos((current) => {
+      const next = { ...current };
+      let changed = false;
+
+      (Object.keys(entries) as TKey[]).forEach((key) => {
+        const image = entries[key];
+        if (image && key in next && next[key].status === "empty") {
+          next[key] = createUploadedChecklistPhoto(image.url, image.publicId ?? undefined);
+          restoredUrls.current.add(image.url);
+          changed = true;
+        }
+      });
+
+      return changed ? next : current;
+    });
   }, []);
 
   const capture = useCallback(
@@ -186,6 +211,9 @@ export const usePhotoSlots = <TKey extends string>(keys: readonly TKey[], persis
     list,
     capture,
     remove,
+    restore,
+    /** True for a photo shown from the server, not taken on this phone. */
+    isRestored: (photo: ChecklistPhotoState) => Boolean(photo.fileUrl && restoredUrls.current.has(photo.fileUrl)),
     hasPendingUpload: list.some((photo) => photo.status === "uploading"),
     hasFailedUpload: list.some((photo) => photo.status === "failed"),
     subtitleFor: (key: TKey, fallback: string) => {
@@ -205,6 +233,20 @@ export const usePhotoList = (max: number, persistKey?: string) => {
   const [photos, setPhotos] = useState<ChecklistPhotoState[]>([]);
   const files = useRef<(File | undefined)[]>([]);
   const hydratedKey = useRef<string | undefined>(undefined);
+  const restoredUrls = useRef(new Set<string>());
+
+  /** Show photos the server already holds (another phone, a cleared browser), if there are none yet. */
+  const restore = useCallback(
+    (images: SubmittedImage[]) => {
+      if (images.length === 0) return;
+      setPhotos((current) => {
+        if (current.length > 0) return current;
+        images.slice(0, max).forEach((image) => restoredUrls.current.add(image.url));
+        return images.slice(0, max).map((image) => createUploadedChecklistPhoto(image.url, image.publicId ?? undefined));
+      });
+    },
+    [max],
+  );
 
   useEffect(() => {
     if (!persistKey || hydratedKey.current === persistKey) return;
@@ -307,11 +349,148 @@ export const usePhotoList = (max: number, persistKey?: string) => {
     add,
     retake,
     remove,
+    restore,
+    isRestored: (photo: ChecklistPhotoState) => Boolean(photo.fileUrl && restoredUrls.current.has(photo.fileUrl)),
     hasPendingUpload: photos.some((photo) => photo.status === "uploading"),
     hasFailedUpload: photos.some((photo) => photo.status === "failed"),
     subtitleFor: (photo: ChecklistPhotoState, fallback: string) => {
       if (photo.status === "uploading") return "Uploading...";
       if (photo.status === "failed") return photo.errorMessage ?? CHECKLIST_UPLOAD_FAILED_MESSAGE;
+
+      return fallback;
+    },
+  };
+};
+
+/**
+ * Optional photos keyed by an id that is only known once it loads (one photo
+ * per safety item). Same capture → upload → retry/remove behaviour as
+ * `usePhotoSlots`, with the slots created on demand.
+ */
+export const usePhotoMap = (persistKey?: string) => {
+  const toast = useToast();
+  const [photos, setPhotos] = useState<Record<string, ChecklistPhotoState>>({});
+  const files = useRef(new Map<string, File>());
+  const attempts = useRef(new Map<string, number>());
+  const hydratedKey = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!persistKey || hydratedKey.current === persistKey) return;
+    hydratedKey.current = persistKey;
+    const saved = readSaved<Record<string, SavedPhoto>>(persistKey);
+
+    if (!saved) return;
+    setPhotos((current) => {
+      const next = { ...current };
+      Object.entries(saved).forEach(([id, entry]) => {
+        if (!next[id]) next[id] = fromSaved(entry);
+      });
+      return next;
+    });
+  }, [persistKey]);
+
+  useEffect(() => {
+    if (!persistKey || hydratedKey.current !== persistKey) return;
+    const out: Record<string, SavedPhoto> = {};
+    Object.entries(photos).forEach(([id, photo]) => {
+      const saved = toSaved(photo);
+      if (saved) out[id] = saved;
+    });
+
+    if (Object.keys(out).length === 0) storage.remove(DRAFT_PREFIX + persistKey);
+    else storage.set(DRAFT_PREFIX + persistKey, JSON.stringify(out));
+  }, [persistKey, photos]);
+
+  const set = useCallback((id: string, next: ChecklistPhotoState | undefined) => {
+    setPhotos((current) => {
+      const copy = { ...current };
+      if (next) copy[id] = next;
+      else delete copy[id];
+      return copy;
+    });
+  }, []);
+
+  const capture = useCallback(
+    async (id: string, label: string, forceNew = false) => {
+      const current = photos[id];
+
+      if (current?.status === "uploading") return;
+
+      let file = !forceNew && current?.status === "failed" ? files.current.get(id) : undefined;
+      let previewUrl = !forceNew && current?.status === "failed" ? current.localUri : null;
+
+      if (!file) {
+        const captured = await capturePhoto();
+
+        if (!captured) return;
+
+        file = captured.file;
+        previewUrl = captured.previewUrl;
+        files.current.set(id, file);
+      }
+
+      const attempt = (attempts.current.get(id) ?? 0) + 1;
+      attempts.current.set(id, attempt);
+      const isLatest = () => attempts.current.get(id) === attempt;
+      const previousFileUrl = current && isChecklistPhotoUploaded(current) ? current.fileUrl : undefined;
+
+      set(id, { localUri: previewUrl, status: "uploading" });
+
+      try {
+        const result = await uploadChecklistPhoto(file, label);
+
+        if (!isLatest()) {
+          void deleteChecklistPhotoBestEffort(result.fileUrl);
+          return;
+        }
+
+        set(id, { ...result, localUri: previewUrl, status: "uploaded" });
+        void deleteChecklistPhotoBestEffort(previousFileUrl);
+      } catch (error) {
+        if (!isLatest()) return;
+        const message = getApiErrorMessage(error) ?? CHECKLIST_UPLOAD_FAILED_MESSAGE;
+
+        set(id, { errorMessage: message, localUri: previewUrl, status: "failed" });
+        toast.error("Upload failed", message);
+      }
+    },
+    [photos, set, toast],
+  );
+
+  const remove = useCallback(
+    async (id: string) => {
+      const current = photos[id];
+
+      if (current && isChecklistPhotoUploaded(current)) {
+        try {
+          await deleteChecklistPhoto(current.fileUrl);
+        } catch {
+          toast.error("Remove failed", "Please try removing the photo again.");
+          return;
+        }
+      }
+
+      attempts.current.set(id, (attempts.current.get(id) ?? 0) + 1);
+      files.current.delete(id);
+      set(id, undefined);
+    },
+    [photos, set, toast],
+  );
+
+  const list = Object.values(photos);
+
+  return {
+    photos,
+    list,
+    capture,
+    remove,
+    hasPendingUpload: list.some((photo) => photo.status === "uploading"),
+    hasFailedUpload: list.some((photo) => photo.status === "failed"),
+    subtitleFor: (id: string, fallback: string) => {
+      const photo = photos[id];
+
+      if (photo?.status === "uploading") return "Uploading...";
+      if (photo?.status === "failed") return photo.errorMessage ?? CHECKLIST_UPLOAD_FAILED_MESSAGE;
 
       return fallback;
     },
