@@ -769,7 +769,7 @@ export type TransitionDriverTripStatusResponse =
   ApiResponse<TransitionDriverTripStatusResponseData>;
 
 /**
- * SAFETY_EQUIPMENT (first aid kit, warning triangle, fire extinguisher) is
+ * SAFETY_EQUIPMENT (warning triangle and fire extinguisher) is
  * photographed in the health check, not listed under Accessories.
  */
 export type VehicleFeatureCategory = "FLASHY" | "PRIMARY" | "AUXILIARY" | "SAFETY_EQUIPMENT";

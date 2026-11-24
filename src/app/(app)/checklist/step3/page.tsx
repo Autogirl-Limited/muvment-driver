@@ -263,7 +263,7 @@ export default function ChecklistStep3Page() {
         }
       />
 
-      <ChecklistSectionTitle className="mt-4">Accessories Photo (Optional)</ChecklistSectionTitle>
+      <ChecklistSectionTitle className="mt-4">Accessories Photo</ChecklistSectionTitle>
       <PhotoUploadCard
         title="Accessories"
         subtitle={slots.subtitleFor("accessories", "Photo of available flashy accessories")}
