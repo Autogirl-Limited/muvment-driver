@@ -12,6 +12,8 @@ interface ChecklistShellProps {
   currentStep: number;
   totalSteps?: number;
   onStepPress?: (step: number) => void;
+  /** Steps are not locked: the stepper may jump ahead. */
+  allowForward?: boolean;
   title: string;
   banner?: string;
   children: ReactNode;
@@ -28,6 +30,7 @@ export const ChecklistShell = ({
   currentStep,
   totalSteps = 4,
   onStepPress,
+  allowForward,
   title,
   banner,
   children,
@@ -42,6 +45,7 @@ export const ChecklistShell = ({
         currentStep={currentStep}
         totalSteps={totalSteps}
         onStepPress={onStepPress}
+        allowForward={allowForward}
         labels={stepLabels ?? (totalSteps === PRE_RIDE_LABELS.length ? PRE_RIDE_LABELS : undefined)}
       />
       <p className="text-eyebrow mt-2 text-accent-text">

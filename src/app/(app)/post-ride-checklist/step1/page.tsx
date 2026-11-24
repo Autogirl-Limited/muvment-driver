@@ -10,6 +10,7 @@ import { NavBar, Screen } from "@/components/ui/Screen";
 import { usePostRideChecklistAggregate } from "@/lib/api/hooks/usePreRideChecklist";
 import { useDriverTrips } from "@/lib/api/hooks/useTrips";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute, getPostRideUnlockedStep } from "@/lib/utils/checklistNavigation";
+import { POST_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
 import { getAssignedVehicleTrip, getPostRidePilotReportTrip } from "@/lib/utils/pilotReports";
 
 const getDisplayValue = (value: string | null | undefined, fallback: string) => value?.trim() || fallback;
@@ -42,6 +43,7 @@ export default function PostRideStep1Page() {
   return (
     <ChecklistShell
       currentStep={1}
+      allowForward={!POST_RIDE_STEP_LOCK_ENABLED}
       stepLabels={["Vehicle", "Exterior", "Interior", "Submit"]}
       title="Post Ride Pilot Report"
       onStepPress={(step) =>

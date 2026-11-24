@@ -191,10 +191,22 @@ export default function TripsPage() {
     },
   ];
 
-  const visibleTrips = useMemo(
-    () => driverTrips.filter((trip) => matchesActiveTab(trip, activeTab, nowMs)),
-    [activeTab, driverTrips, nowMs],
-  );
+  const hasSearchOrDate = debouncedSearch.length > 0 || isDateFiltered;
+  const visibleTrips = useMemo(() => {
+    const matching = driverTrips.filter((trip) => matchesActiveTab(trip, activeTab, nowMs));
+
+    // A ride that is still going must show under Ongoing even when it falls
+    // outside this page of results (started on an earlier day, or older than
+    // the newest 50). Only without a search or date, which narrow on purpose.
+    if (activeTab !== "Ongoing" || hasSearchOrDate) return matching;
+
+    const known = new Set(matching.map((trip) => trip.id));
+    const carried = (recentTrips ?? []).filter(
+      (trip) => !known.has(trip.id) && matchesActiveTab(trip, "Ongoing", nowMs),
+    );
+
+    return carried.length > 0 ? [...carried, ...matching] : matching;
+  }, [activeTab, driverTrips, hasSearchOrDate, nowMs, recentTrips]);
   const fallbackStatus: DriverTripStatus | undefined =
     activeTab === "Upcoming"
       ? "NOT_STARTED"

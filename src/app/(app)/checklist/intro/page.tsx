@@ -1,12 +1,13 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CarFront, ClipboardCheck, Gauge, Wrench } from "lucide-react";
 
 import { ReportIntro, type ReportIntroPart } from "@/components/checklist/ReportIntro";
 import { BackButton } from "@/components/ui/BackButton";
 import { Screen } from "@/components/ui/Screen";
+import { useTodayChecklist } from "@/lib/api/hooks/usePreRideChecklist";
 import { getChecklistStepRoute, getPreRideStarterStepRoute } from "@/lib/utils/checklistNavigation";
 
 const PRE_RIDE_PARTS: ReportIntroPart[] = [
@@ -29,6 +30,21 @@ function ReportIntroContent() {
   const isPostRide = searchParams.get("flow") === "postRide";
   const trackerId = searchParams.get("trackerId")?.trim() || undefined;
   const isContinuing = Boolean(trackerId) && !isPostRide;
+  const todayChecklist = useTodayChecklist().data?.data;
+  const todayState = todayChecklist?.state ?? todayChecklist?.status;
+
+  // The pre-ride report is already sent for this day (a stale Home card, an old
+  // link or notification): go on to the post-ride report instead of showing the
+  // morning steps (vehicle health, coolant...) again.
+  useEffect(() => {
+    if (isPostRide || !trackerId || todayChecklist?.checklistTrackerId?.trim() !== trackerId) return;
+
+    if (todayState === "PRE_TRIP_COMPLETED" || todayState === "POST_TRIP_IN_PROGRESS") {
+      router.replace(`/checklist/intro?flow=postRide&trackerId=${encodeURIComponent(trackerId)}`);
+    } else if (todayState === "DAY_ENDED") {
+      router.replace("/home");
+    }
+  }, [isPostRide, router, todayChecklist?.checklistTrackerId, todayState, trackerId]);
 
   const begin = () => {
     const firstStep = isPostRide

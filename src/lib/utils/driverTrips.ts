@@ -1,4 +1,5 @@
 import type { RideTimer } from "../api/driverPaymentTypes";
+import { getEffectiveBookedEndMs } from "../rideTimer/ridePauses";
 import type {
   DriverTrip,
   DriverTripDetails,
@@ -334,7 +335,10 @@ const PRE_RIDE: readonly DriverTripStatus[] = [
 export const getBookedEndMs = (
   rideTimer?: RideTimer | null,
   endDateTime?: string | null,
-) => parseLagosMs(rideTimer?.bookedEndAt) ?? parseLagosMs(endDateTime);
+  nowMs = Date.now(),
+) =>
+  getEffectiveBookedEndMs(rideTimer, parseLagosMs(rideTimer?.bookedEndAt), nowMs) ??
+  parseLagosMs(endDateTime);
 
 const resolveLiveRideStatus = (
   status: DriverTripStatus | undefined,
@@ -358,7 +362,7 @@ const resolveLiveRideStatus = (
     return undefined;
   }
 
-  const bookedEndMs = getBookedEndMs(rideTimer, endDateTime);
+  const bookedEndMs = getBookedEndMs(rideTimer, endDateTime, nowMs);
 
   if (bookedEndMs === undefined) {
     return status === "EXTRA_TIME" ? "EXTRA_TIME" : "ONGOING";
@@ -438,7 +442,7 @@ export const getDriverTripTab = (
   if (status && RIDING.includes(status)) return "Ongoing";
 
   const startMs = parseLagosMs(trip.startDateTime);
-  const endMs = getBookedEndMs(trip.rideTimer, trip.endDateTime);
+  const endMs = getBookedEndMs(trip.rideTimer, trip.endDateTime, nowMs);
 
   if (!status || PRE_RIDE.includes(status)) {
     // Never started and its time is over: Completed.

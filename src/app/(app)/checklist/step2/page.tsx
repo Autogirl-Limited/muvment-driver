@@ -1,18 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { ChecklistSectionTitle, ChecklistShell } from "@/components/checklist/ChecklistShell";
 import { PhotoInsightNote, SidePhotoCheck } from "@/components/checklist/AiPhotoNotes";
 import { PhotoStepper, toShotTileState, type PhotoStep } from "@/components/checklist/PhotoStepper";
 import { PhotoUploadCard } from "@/components/checklist/PhotoUploadCard";
+import { useStepGate } from "@/hooks/useStepGate";
 import { clearPhotoDraft, usePhotoList, usePhotoSlots } from "@/hooks/usePhotoSlot";
 import { getApiErrorMessage, isChecklistStepConflictError } from "@/lib/api/errors";
 import {
+  submittedImagesFor,
   useAssignedVehicle,
   usePreRideChecklistSummary,
   useSubmitExteriorChecklist,
+  useSubmittedChecklistPhotos,
   useTodayChecklist,
 } from "@/lib/api/hooks/usePreRideChecklist";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
@@ -20,10 +23,10 @@ import type { ExteriorSide, ExteriorUploadImage } from "@/lib/api/types";
 import {
   getChecklistStepRoute,
   getGuardedChecklistStepRoute,
-  getPreRideGuardedStep,
   getPreRideStarterStepRoute,
 } from "@/lib/utils/checklistNavigation";
-import { isChecklistPhotoUploaded, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
+import { PRE_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
+import { isChecklistPhotoUploaded, pickSubmittedImages, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
 import type { ChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import { readChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import { toLagosDate } from "@/lib/utils/lagosTime";
@@ -75,6 +78,17 @@ export default function ChecklistStep2Page() {
   const required = usePhotoSlots(REQUIRED_KEYS, draftScope ? `exterior:${draftScope}` : undefined);
   const damage = usePhotoList(3, draftScope ? `exterior-damage:${draftScope}` : undefined);
 
+  // Saved on another phone (or this one lost its copy): show what was submitted.
+  const submittedQuery = useSubmittedChecklistPhotos(activeTrackerId || undefined, { enabled: hasSavedExteriorChecklist });
+  const { restore: restoreRequired } = required;
+  const { restore: restoreDamage } = damage;
+  useEffect(() => {
+    const images = submittedImagesFor(submittedQuery.data, "EXTERIOR", "PRE_TRIP");
+    if (images.length === 0) return;
+    restoreRequired(pickSubmittedImages(images, REQUIRED_IMAGE_TYPES));
+    restoreDamage(images.filter((image) => image.type === "DAMAGE"));
+  }, [restoreDamage, restoreRequired, submittedQuery.data]);
+
   const stepOrder: Array<RequiredKey | "damage"> = [...REQUIRED_KEYS, "damage"];
   const photoSteps: PhotoStep[] = [
     ...REQUIRED_KEYS.map((key) => ({
@@ -104,13 +118,25 @@ export default function ChecklistStep2Page() {
     }
   }, [activeTrackerId, assignedVehicleQuery.data, assignedVehicleQuery.isError, assignedVehicleQuery.isLoading, currentUserId, router]);
 
+  const stepGate = useStepGate({
+    summary: checklistSummary,
+    flow: "preRide",
+    isError: checklistSummaryQuery.isError,
+    isFetching: checklistSummaryQuery.isFetching,
+    onRecheck: () => void checklistSummaryQuery.refetch(),
+    step: 2,
+    trackerId: activeTrackerId,
+  });
+
+  // Photos kept from an earlier try (the step was never saved) come back all at
+  // once: open on the last screen so one tap sends them, instead of walking
+  // through every photo again. Only on arrival, never mid-way through a fresh run.
+  const resumedAtEnd = useRef(false);
   useEffect(() => {
-    if (!activeTrackerId || checklistSummaryQuery.isFetching || !checklistSummary) return;
-    const guardedStep = getPreRideGuardedStep(2, checklistSummary);
-    if (guardedStep !== 2) {
-      router.replace(getChecklistStepRoute("preRide", activeTrackerId, guardedStep));
-    }
-  }, [activeTrackerId, checklistSummary, checklistSummaryQuery.isFetching, router]);
+    if (resumedAtEnd.current || hasSavedExteriorChecklist || current !== 0 || !required.list.every(isChecklistPhotoUploaded)) return;
+    resumedAtEnd.current = true;
+    setCurrent(stepOrder.length - 1);
+  }, [current, hasSavedExteriorChecklist, required.list, stepOrder.length]);
 
   const requiredList = required.list;
   const hasPendingUpload = required.hasPendingUpload || damage.hasPendingUpload;
@@ -168,7 +194,11 @@ export default function ChecklistStep2Page() {
     }
 
     // Nothing freshly captured: skip straight ahead instead of re-submitting.
-    if (activeTrackerId && hasSavedExteriorChecklist && !requiredList.some(isChecklistPhotoUploaded)) {
+    if (
+      activeTrackerId &&
+      hasSavedExteriorChecklist &&
+      !requiredList.some((photo) => isChecklistPhotoUploaded(photo) && !required.isRestored(photo))
+    ) {
       router.push(getChecklistStepRoute("preRide", activeTrackerId, 3));
       return;
     }
@@ -227,6 +257,7 @@ export default function ChecklistStep2Page() {
   return (
     <ChecklistShell
       currentStep={2}
+      allowForward={!PRE_RIDE_STEP_LOCK_ENABLED}
       title="Exterior Photos"
       banner="Capture all exterior angles before moving to the interior checklist."
       onStepPress={(step) => {
@@ -236,7 +267,7 @@ export default function ChecklistStep2Page() {
           );
           return;
         }
-        router.replace(getPreRideStarterStepRoute(Math.min(step, 2)));
+        router.replace(getPreRideStarterStepRoute(PRE_RIDE_STEP_LOCK_ENABLED ? Math.min(step, 2) : step));
       }}
       footer={{
         children: isDamageStep
@@ -249,7 +280,7 @@ export default function ChecklistStep2Page() {
             ? "Uploading..."
             : "Next Photo",
         loading: isDamageStep ? isSubmitting : photoSteps[current].state === "uploading",
-        disabled: !isDamageStep && !["uploaded", "saved"].includes(photoSteps[current].state),
+        disabled: stepGate.blocked || (!isDamageStep && !["uploaded", "saved"].includes(photoSteps[current].state)),
         onClick: () => {
           if (!isDamageStep) {
             setCurrent((value) => Math.min(value + 1, stepOrder.length - 1));
@@ -263,6 +294,7 @@ export default function ChecklistStep2Page() {
         },
       }}
     >
+      {stepGate.notice}
       <PhotoStepper steps={photoSteps} current={current} onSelect={setCurrent} />
 
       <div key={stepOrder[current]} className="anim-fade-in mt-5">
