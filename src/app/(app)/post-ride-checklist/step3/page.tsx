@@ -26,7 +26,6 @@ import {
   useUpdateInteriorMetadata,
   useVehicleFeatures,
 } from "@/lib/api/hooks/usePreRideChecklist";
-import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import type { InteriorUploadImage } from "@/lib/api/types";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute } from "@/lib/utils/checklistNavigation";
 import { POST_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
@@ -61,8 +60,8 @@ export default function PostRideStep3Page() {
   const aggregateQuery = usePostRideChecklistAggregate(activeTrackerId);
   const submitInteriorChecklist = useSubmitInteriorChecklist();
   const updateInteriorMetadata = useUpdateInteriorMetadata();
-  const currentUserQuery = useCurrentUser();
-  const vehicleFeaturesQuery = useVehicleFeatures(currentUserQuery.data?.data.vehicleId, { enabled: !currentUserQuery.isLoading });
+  // The full accessories catalogue, same as the mobile app.
+  const vehicleFeaturesQuery = useVehicleFeatures(undefined);
   const aggregate = aggregateQuery.data?.data;
   const savedInteriorSummary = aggregate?.postTripSummary?.interiorPhotos;
   const savedMetadata = savedInteriorSummary?.metadata ?? aggregate?.postTripSummary?.vehicleMetadata;
