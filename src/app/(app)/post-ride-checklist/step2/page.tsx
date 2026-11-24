@@ -95,7 +95,7 @@ export default function PostRideStep2Page() {
     if (resumedAtEnd.current || hasSavedExteriorChecklist || current !== 0 || !required.list.every(isChecklistPhotoUploaded)) return;
     resumedAtEnd.current = true;
     setCurrent(photoSteps.length - 1);
-  }, [current, photoSteps.length, required.list]);
+  }, [current, hasSavedExteriorChecklist, photoSteps.length, required.list]);
 
   const isNextEnabled =
     (hasSavedExteriorChecklist || required.list.every(isChecklistPhotoUploaded)) &&
