@@ -63,7 +63,7 @@ export default function PostRideStep3Page() {
   const submitInteriorChecklist = useSubmitInteriorChecklist();
   const updateInteriorMetadata = useUpdateInteriorMetadata();
   // The full accessories catalogue, same as the mobile app.
-  const vehicleFeaturesQuery = useVehicleFeatures(undefined);
+  const vehicleFeaturesQuery = useVehicleFeatures(undefined, { category: "PRIMARY" });
   const aggregate = aggregateQuery.data?.data;
   const savedInteriorSummary = aggregate?.postTripSummary?.interiorPhotos;
   const savedMetadata = savedInteriorSummary?.metadata ?? aggregate?.postTripSummary?.vehicleMetadata;
