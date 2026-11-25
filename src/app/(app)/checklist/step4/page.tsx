@@ -26,6 +26,12 @@ import type { VehicleHealthCheckPhoto } from "@/lib/api/types";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute } from "@/lib/utils/checklistNavigation";
 import { PRE_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
 import { isChecklistPhotoUploaded, pickSubmittedImages, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
+import {
+  clearChecklistFeatureSelection,
+  isChargerFeature,
+  joinFeatureNames,
+  readChecklistFeatureSelection,
+} from "@/lib/utils/checklistVehicleFeatures";
 import { clearChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import { usePersistentIdempotencyKey } from "@/lib/utils/persistentIdempotencyKey";
 import { useToast } from "@/providers/ToastProvider";
@@ -68,6 +74,14 @@ export default function ChecklistStep4Page() {
   const health = usePhotoSlots(HEALTH_KEYS, activeTrackerId ? `health:${activeTrackerId}` : undefined);
   const selfieSlot = usePhotoSlots(["selfie"] as const, activeTrackerId ? `selfie:${activeTrackerId}` : undefined);
   const selfie = selfieSlot.photos.selfie;
+  const selectedGroupFeatures = readChecklistFeatureSelection(activeTrackerId)
+    .filter((feature) => !isChargerFeature(feature))
+    .map((feature) => feature.name);
+  const groupPhotoSubtitle = `Include ${joinFeatureNames([
+    "Warning Triangle",
+    "Fire Extinguisher",
+    ...selectedGroupFeatures,
+  ])} in one photo`;
 
   const stepGate = useStepGate({
     summary: checklistSummary,
@@ -172,6 +186,7 @@ export default function ChecklistStep4Page() {
       clearPhotoDraft(`health:${activeTrackerId}`);
       clearPhotoDraft(`safety-items:${activeTrackerId}`);
       clearPhotoDraft(`selfie:${activeTrackerId}`);
+      clearChecklistFeatureSelection(activeTrackerId);
       toast.success("Pre Ride Pilot Report submitted", "You are ready for your first ride today.");
       clearChecklistVehicleSelection(currentUserQuery.data?.data.userId);
       router.replace("/home");
@@ -235,7 +250,10 @@ export default function ChecklistStep4Page() {
           <PhotoUploadCard
             key={key}
             title={HEALTH_LABELS[key].title}
-            subtitle={health.subtitleFor(key, HEALTH_LABELS[key].subtitle)}
+            subtitle={health.subtitleFor(
+              key,
+              key === "safetyEquipment" ? groupPhotoSubtitle : HEALTH_LABELS[key].subtitle,
+            )}
             imageUri={health.photos[key].localUri}
             uploading={health.photos[key].status === "uploading"}
             failed={health.photos[key].status === "failed"}
