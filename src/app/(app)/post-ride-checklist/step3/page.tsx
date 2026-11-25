@@ -32,6 +32,7 @@ import type { InteriorUploadImage } from "@/lib/api/types";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute } from "@/lib/utils/checklistNavigation";
 import { POST_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
 import { isChecklistPhotoUploaded, pickSubmittedImages, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
+import { isChargerFeature } from "@/lib/utils/checklistVehicleFeatures";
 import { usePersistentIdempotencyKey } from "@/lib/utils/persistentIdempotencyKey";
 import { useToast } from "@/providers/ToastProvider";
 
@@ -70,8 +71,11 @@ export default function PostRideStep3Page() {
   const hasSavedInteriorSubmission = savedInteriorSummary?.valid === true;
   const idempotencyKey = usePersistentIdempotencyKey(`post-trip-interior-${activeTrackerId}`);
   const slots = usePhotoSlots(INTERIOR_KEYS, activeTrackerId ? `post-interior:${activeTrackerId}` : undefined);
-  const [selectedFeatureId, setSelectedFeatureId] = useState<string>();
+  const [selectedFeatureIds, setSelectedFeatureIds] = useState<string[]>([]);
   const vehicleFeatures = (vehicleFeaturesQuery.data?.data ?? []).filter((feature) => feature.category !== "SAFETY_EQUIPMENT");
+  const selectedCharger = vehicleFeatures.find(
+    (feature) => selectedFeatureIds.includes(feature.id) && isChargerFeature(feature),
+  );
 
   // Saved on another phone (or this one lost its copy): show what was submitted.
   const submittedQuery = useSubmittedChecklistPhotos(activeTrackerId || undefined, { enabled: hasSavedInteriorSubmission });
@@ -80,8 +84,8 @@ export default function PostRideStep3Page() {
     const images = submittedImagesFor(submittedQuery.data, "INTERIOR", "POST_TRIP");
     if (images.length === 0) return;
     restoreSlots(pickSubmittedImages(images, INTERIOR_IMAGE_TYPES));
-    const featureId = images.find((image) => image.type === "ACCESSORIES" && image.publicId)?.publicId ?? undefined;
-    setSelectedFeatureId((prev) => prev ?? featureId);
+    const featureId = images.find((image) => image.type === "ACCESSORIES" && image.publicId)?.publicId;
+    if (featureId) setSelectedFeatureIds((prev) => (prev.length > 0 ? prev : [featureId]));
   }, [restoreSlots, submittedQuery.data]);
 
   const stepGate = useStepGate({
@@ -96,6 +100,7 @@ export default function PostRideStep3Page() {
 
   const dashboardPhoto = slots.photos.dashboard;
   const hasDashboardUploaded = isChecklistPhotoUploaded(dashboardPhoto);
+  const requiredPhotos = PHOTO_KEYS.map((key) => slots.photos[key]);
   const readings = useDashboardReadingFlow({
     checklistType: "POST_TRIP",
     dashboardUploading: dashboardPhoto.status === "uploading",
@@ -116,7 +121,7 @@ export default function PostRideStep3Page() {
     hasValidMetadata &&
     !readings.isReadingPending &&
     !slots.hasPendingUpload &&
-    !slots.hasFailedUpload &&
+    !requiredPhotos.some((photo) => photo.status === "failed") &&
     !isSubmitting;
 
   /** Saves the interior photos (once) and the readings as shown, then moves on. */
@@ -132,8 +137,8 @@ export default function PostRideStep3Page() {
       if (!hasSavedInteriorSubmission) {
         const accessoryPhoto = slots.photos.accessories;
         const accessoryUploadPhoto =
-          isChecklistPhotoUploaded(accessoryPhoto) && selectedFeatureId
-            ? { ...toChecklistUploadedPhoto(accessoryPhoto), interiorUploadImage: "ACCESSORIES" as const, publicCloudID: selectedFeatureId }
+          isChecklistPhotoUploaded(accessoryPhoto) && selectedCharger
+            ? { ...toChecklistUploadedPhoto(accessoryPhoto), interiorUploadImage: "ACCESSORIES" as const, publicCloudID: selectedCharger.id }
             : undefined;
 
         try {
@@ -223,34 +228,33 @@ export default function PostRideStep3Page() {
 
       {vehicleFeatures.length > 0 && (
         <>
-          <ChecklistSectionTitle className="mt-2">Accessory Feature</ChecklistSectionTitle>
+          <ChecklistSectionTitle className="mt-2">Vehicle Features</ChecklistSectionTitle>
+          <p className="text-footnote mb-3 text-text-3">Select everything available in the car.</p>
           <FeatureChips
             features={vehicleFeatures}
-            selectedIds={selectedFeatureId ? [selectedFeatureId] : []}
-            onToggle={(id) => setSelectedFeatureId((current) => (current === id ? undefined : id))}
-          />
-          <PhotoUploadCard
-            title="Accessories"
-            subtitle={slots.subtitleFor("accessories", "Select a feature, then capture it")}
-            imageUri={slots.photos.accessories.localUri}
-            uploading={slots.photos.accessories.status === "uploading"}
-            failed={slots.photos.accessories.status === "failed"}
-            onClick={() =>
-              void slots.capture({
-                key: "accessories",
-                label: "post-interior-ACCESSORIES",
-                entityId: activeTrackerId,
-                beforeCapture: () => {
-                  if (!selectedFeatureId) {
-                    toast.error("Select a vehicle feature", "Choose the feature shown in the accessory photo first.");
-                    return false;
-                  }
-                  return true;
-                },
-              })
+            selectedIds={selectedFeatureIds}
+            onToggle={(id) =>
+              setSelectedFeatureIds((current) =>
+                current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
+              )
             }
-            onRemove={() => void slots.remove("accessories")}
           />
+          {selectedCharger && (
+            <>
+              <ChecklistSectionTitle className="mt-4">Car Charger Photo</ChecklistSectionTitle>
+              <PhotoUploadCard
+                title="Car Charger"
+                subtitle={slots.subtitleFor("accessories", "Take a clear photo of the charger")}
+                imageUri={slots.photos.accessories.localUri}
+                uploading={slots.photos.accessories.status === "uploading"}
+                failed={slots.photos.accessories.status === "failed"}
+                onClick={() =>
+                  void slots.capture({ key: "accessories", label: "post-interior-ACCESSORIES", entityId: activeTrackerId })
+                }
+                onRemove={() => void slots.remove("accessories")}
+              />
+            </>
+          )}
         </>
       )}
 

@@ -29,6 +29,11 @@ import type { InteriorUploadImage } from "@/lib/api/types";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute } from "@/lib/utils/checklistNavigation";
 import { PRE_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
 import { isChecklistPhotoUploaded, pickSubmittedImages, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
+import {
+  isChargerFeature,
+  readChecklistFeatureSelection,
+  saveChecklistFeatureSelection,
+} from "@/lib/utils/checklistVehicleFeatures";
 import { usePersistentIdempotencyKey } from "@/lib/utils/persistentIdempotencyKey";
 import { useToast } from "@/providers/ToastProvider";
 
@@ -68,8 +73,23 @@ export default function ChecklistStep3Page() {
   const savedMetadata = checklistSummary?.interiorPhotos?.metadata;
   const hasSavedInteriorSubmission = checklistSummary?.interiorPhotos?.valid === true;
   const slots = usePhotoSlots(INTERIOR_KEYS, activeTrackerId ? `interior:${activeTrackerId}` : undefined);
-  const [selectedFeatureIds, setSelectedFeatureIds] = useState<string[]>([]);
+  const [selectedFeatureIds, setSelectedFeatureIds] = useState<string[]>(() =>
+    readChecklistFeatureSelection(activeTrackerId).map((feature) => feature.id),
+  );
   const vehicleFeatures = (vehicleFeaturesQuery.data?.data ?? []).filter((feature) => feature.category !== "SAFETY_EQUIPMENT");
+  const selectedCharger = vehicleFeatures.find(
+    (feature) => selectedFeatureIds.includes(feature.id) && isChargerFeature(feature),
+  );
+
+  useEffect(() => {
+    if (vehicleFeaturesQuery.isLoading || vehicleFeaturesQuery.isError) return;
+    saveChecklistFeatureSelection(
+      activeTrackerId,
+      vehicleFeatures
+        .filter((feature) => selectedFeatureIds.includes(feature.id))
+        .map(({ id, name }) => ({ id, name })),
+    );
+  }, [activeTrackerId, selectedFeatureIds, vehicleFeatures, vehicleFeaturesQuery.isError, vehicleFeaturesQuery.isLoading]);
 
   // Saved on another phone (or this one lost its copy): show what was submitted.
   const submittedQuery = useSubmittedChecklistPhotos(activeTrackerId || undefined, { enabled: hasSavedInteriorSubmission });
@@ -94,6 +114,7 @@ export default function ChecklistStep3Page() {
 
   const dashboardPhoto = slots.photos.dashboard;
   const hasDashboardUploaded = isChecklistPhotoUploaded(dashboardPhoto);
+  const requiredPhotos = PHOTO_KEYS.map((key) => slots.photos[key]);
   const readings = useDashboardReadingFlow({
     checklistType: "PRE_TRIP",
     dashboardUploading: dashboardPhoto.status === "uploading",
@@ -114,7 +135,7 @@ export default function ChecklistStep3Page() {
     hasValidMetadata &&
     !readings.isReadingPending &&
     !slots.hasPendingUpload &&
-    !slots.hasFailedUpload &&
+    !requiredPhotos.some((photo) => photo.status === "failed") &&
     !isSubmitting;
 
   /** Saves the interior photos (once) and the readings as shown, then moves on. */
@@ -131,16 +152,15 @@ export default function ChecklistStep3Page() {
 
     try {
       if (!hasSavedInteriorSubmission) {
-        // Each selected feature becomes its own ACCESSORIES entry pointing at the one accessory photo.
         const accessoryPhoto = slots.photos.accessories;
-        const accessoryUploadPhotos =
-          isChecklistPhotoUploaded(accessoryPhoto) && selectedFeatureIds.length > 0
-            ? selectedFeatureIds.map((featureId) => ({
+        const accessoryUploadPhoto =
+          isChecklistPhotoUploaded(accessoryPhoto) && selectedCharger
+            ? {
                 ...toChecklistUploadedPhoto(accessoryPhoto),
                 interiorUploadImage: "ACCESSORIES" as const,
-                publicCloudID: featureId,
-              }))
-            : [];
+                publicCloudID: selectedCharger.id,
+              }
+            : undefined;
 
         try {
           await submitInteriorChecklist.mutateAsync({
@@ -153,7 +173,7 @@ export default function ChecklistStep3Page() {
                   ...toChecklistUploadedPhoto(slots.photos[key]),
                   interiorUploadImage: INTERIOR_IMAGE_TYPES[key],
                 })),
-                ...accessoryUploadPhotos,
+                ...(accessoryUploadPhoto ? [accessoryUploadPhoto] : []),
               ],
             },
             trackerId: activeTrackerId,
@@ -247,6 +267,7 @@ export default function ChecklistStep3Page() {
       )}
 
       <ChecklistSectionTitle className="mt-2">Vehicle Features</ChecklistSectionTitle>
+      <p className="text-footnote mb-3 text-text-3">Select everything available in the car.</p>
       {!vehicleFeaturesQuery.isLoading && vehicleFeatures.length === 0 && (
         <p className="text-footnote mb-4 text-text-3">
           {vehicleFeaturesQuery.isError
@@ -263,28 +284,20 @@ export default function ChecklistStep3Page() {
         }
       />
 
-      <ChecklistSectionTitle className="mt-4">Accessories Photo</ChecklistSectionTitle>
-      <PhotoUploadCard
-        title="Accessories"
-        subtitle={slots.subtitleFor("accessories", "Photo of available flashy accessories")}
-        imageUri={slots.photos.accessories.localUri}
-        uploading={slots.photos.accessories.status === "uploading"}
-        failed={slots.photos.accessories.status === "failed"}
-        onClick={() =>
-          void slots.capture({
-            key: "accessories",
-            label: "accessories",
-            beforeCapture: () => {
-              if (selectedFeatureIds.length === 0) {
-                toast.error("Select vehicle features", "Choose the features shown in the accessory photo first.");
-                return false;
-              }
-              return true;
-            },
-          })
-        }
-        onRemove={() => void slots.remove("accessories")}
-      />
+      {selectedCharger && (
+        <>
+          <ChecklistSectionTitle className="mt-4">Car Charger Photo</ChecklistSectionTitle>
+          <PhotoUploadCard
+            title="Car Charger"
+            subtitle={slots.subtitleFor("accessories", "Take a clear photo of the charger")}
+            imageUri={slots.photos.accessories.localUri}
+            uploading={slots.photos.accessories.status === "uploading"}
+            failed={slots.photos.accessories.status === "failed"}
+            onClick={() => void slots.capture({ key: "accessories", label: "accessories" })}
+            onRemove={() => void slots.remove("accessories")}
+          />
+        </>
+      )}
     </ChecklistShell>
   );
 }
