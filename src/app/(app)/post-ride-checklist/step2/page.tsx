@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { ChecklistSectionTitle, ChecklistShell } from "@/components/checklist/ChecklistShell";
-import { PhotoInsightNote, SidePhotoCheck } from "@/components/checklist/AiPhotoNotes";
 import { PhotoStepper, toShotTileState, type PhotoStep } from "@/components/checklist/PhotoStepper";
 import { PhotoUploadCard } from "@/components/checklist/PhotoUploadCard";
 import { BackButton } from "@/components/ui/BackButton";
@@ -20,7 +19,7 @@ import {
   useSubmittedChecklistPhotos,
   useTodayChecklist,
 } from "@/lib/api/hooks/usePreRideChecklist";
-import type { ExteriorSide, ExteriorUploadImage } from "@/lib/api/types";
+import type { ExteriorUploadImage } from "@/lib/api/types";
 import { POST_RIDE_DAMAGE_CONFIG, POST_RIDE_EXTERIOR_PHOTOS } from "@/lib/data/tripTimeline";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute } from "@/lib/utils/checklistNavigation";
 import { POST_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
@@ -222,7 +221,6 @@ export default function PostRideStep2Page() {
                 failed={photo.status === "failed"}
                 onClick={() => void damage.retake(index, "post-exterior-damage", activeTrackerId)}
                 onRemove={() => void damage.remove(index)}
-                footer={<PhotoInsightNote imageUrl={photo.fileUrl} kind="DAMAGE" label="Damage close-up" checklistType="POST_TRIP" trackerId={activeTrackerId} />}
               />
             ))}
             {damage.photos.length < POST_RIDE_DAMAGE_CONFIG.maxPhotos && (
@@ -251,14 +249,6 @@ export default function PostRideStep2Page() {
                     void required.capture({ key: photo.id, label: `post-exterior-${REQUIRED_IMAGE_TYPES[photo.id]}`, entityId: activeTrackerId })
                   }
                   onRemove={() => void required.remove(photo.id)}
-                  footer={
-                    <SidePhotoCheck
-                      imageUrl={required.photos[photo.id].fileUrl}
-                      side={REQUIRED_IMAGE_TYPES[photo.id] as ExteriorSide}
-                      checklistType="POST_TRIP"
-                      trackerId={activeTrackerId}
-                    />
-                  }
                 />
                 {hasSavedExteriorChecklist && !required.photos[photo.id].localUri && (
                   <p className="text-footnote mt-1 text-text-3">Already saved. Tap Next Photo to carry on, or take it again.</p>

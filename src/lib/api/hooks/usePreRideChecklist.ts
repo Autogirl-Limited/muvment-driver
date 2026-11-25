@@ -31,6 +31,7 @@ import type {
   TodayChecklistResponse,
   TransitionDriverTripStatusResponse,
   UpdateInteriorMetadataPayload,
+  VehicleFeatureCategory,
   VehicleFeaturesResponse,
 } from "../types";
 
@@ -429,15 +430,18 @@ export const useInfiniteChecklistTrackers = ({
 
 export const useVehicleFeatures = (
   vehicleId?: string | null,
-  options: { enabled?: boolean } = {},
+  options: { category?: VehicleFeatureCategory; enabled?: boolean } = {},
 ) =>
   useQuery<VehicleFeaturesResponse, Error>({
-    queryKey: [...VEHICLE_FEATURES_QUERY_KEY, vehicleId?.trim() || "all"],
+    queryKey: [...VEHICLE_FEATURES_QUERY_KEY, vehicleId?.trim() || "all", options.category ?? "all-categories"],
     queryFn: async () => {
       const trimmedVehicleId = vehicleId?.trim();
-      const path = trimmedVehicleId
+      const basePath = trimmedVehicleId
         ? `${VEHICLE_FEATURES_PATH}/${encodeURIComponent(trimmedVehicleId)}`
         : VEHICLE_FEATURES_PATH;
+      const params = new URLSearchParams();
+      if (options.category) params.set("category", options.category);
+      const path = params.size > 0 ? `${basePath}?${params.toString()}` : basePath;
       const response = await apiFetchClient.get<VehicleFeaturesResponse>(
         path,
       );
