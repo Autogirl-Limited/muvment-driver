@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Camera, X } from "lucide-react";
 
-import { ChecklistSectionTitle, ChecklistShell } from "@/components/checklist/ChecklistShell";
 import { PhotoInsightNote } from "@/components/checklist/AiPhotoNotes";
+import { ChecklistSectionTitle, ChecklistShell } from "@/components/checklist/ChecklistShell";
 import { PhotoUploadCard } from "@/components/checklist/PhotoUploadCard";
 import { AlertDialog } from "@/components/ui/Dialog";
 import { Spinner } from "@/components/ui/Spinner";
@@ -23,7 +23,7 @@ import {
   useVehicleFeatures,
 } from "@/lib/api/hooks/usePreRideChecklist";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
-import type { PhotoInsightKind, VehicleFeature, VehicleHealthCheckPhoto } from "@/lib/api/types";
+import type { VehicleFeature, VehicleHealthCheckPhoto } from "@/lib/api/types";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute } from "@/lib/utils/checklistNavigation";
 import { PRE_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
 import { isChecklistPhotoUploaded, pickSubmittedImages, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
@@ -34,11 +34,6 @@ import { useToast } from "@/providers/ToastProvider";
 type HealthKey = "oilLevel" | "coolantLevel" | "safetyEquipment";
 
 const HEALTH_KEYS: readonly HealthKey[] = ["oilLevel", "coolantLevel", "safetyEquipment"];
-const HEALTH_INSIGHT_KINDS: Record<HealthKey, PhotoInsightKind> = {
-  coolantLevel: "COOLANT_LEVEL",
-  oilLevel: "OIL_LEVEL",
-  safetyEquipment: "SAFETY_EQUIPMENT",
-};
 const HEALTH_PHOTO_TYPES: Record<HealthKey, VehicleHealthCheckPhoto> = {
   coolantLevel: "COOLANT_LEVEL",
   oilLevel: "OIL_LEVEL",
@@ -285,15 +280,6 @@ export default function ChecklistStep4Page() {
             failed={health.photos[key].status === "failed"}
             onClick={() => void health.capture({ key, label: `vehicle-health-${HEALTH_PHOTO_TYPES[key]}` })}
             onRemove={() => void health.remove(key)}
-            footer={
-              <PhotoInsightNote
-                imageUrl={health.photos[key].fileUrl}
-                kind={HEALTH_INSIGHT_KINDS[key]}
-                label={HEALTH_LABELS[key].title}
-                checklistType="PRE_TRIP"
-                trackerId={activeTrackerId}
-              />
-            }
           />
         ))}
 
@@ -327,17 +313,6 @@ export default function ChecklistStep4Page() {
                 failed={photo?.status === "failed"}
                 onClick={() => void safetyItemSlots.capture(item.id, `vehicle-health-${HEALTH_PHOTO_TYPES.safetyEquipment}`)}
                 onRemove={() => void safetyItemSlots.remove(item.id)}
-                footer={
-                  photo ? (
-                    <PhotoInsightNote
-                      imageUrl={photo.fileUrl}
-                      kind="SAFETY_EQUIPMENT"
-                      label={item.name}
-                      checklistType="PRE_TRIP"
-                      trackerId={activeTrackerId}
-                    />
-                  ) : undefined
-                }
               />
             );
           })
