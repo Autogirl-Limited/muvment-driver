@@ -4,13 +4,13 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Camera, X } from "lucide-react";
 
-import { ChecklistSectionTitle, ChecklistShell } from "@/components/checklist/ChecklistShell";
 import { PhotoInsightNote } from "@/components/checklist/AiPhotoNotes";
+import { ChecklistSectionTitle, ChecklistShell } from "@/components/checklist/ChecklistShell";
 import { PhotoUploadCard } from "@/components/checklist/PhotoUploadCard";
 import { AlertDialog } from "@/components/ui/Dialog";
 import { Spinner } from "@/components/ui/Spinner";
 import { useStepGate } from "@/hooks/useStepGate";
-import { clearPhotoDraft, usePhotoMap, usePhotoSlots } from "@/hooks/usePhotoSlot";
+import { clearPhotoDraft, usePhotoSlots } from "@/hooks/usePhotoSlot";
 import { getApiErrorMessage, isChecklistStepConflictError } from "@/lib/api/errors";
 import {
   submittedImagesFor,
@@ -20,10 +20,9 @@ import {
   useSubmittedChecklistPhotos,
   useSubmitVehicleHealthChecklist,
   useTodayChecklist,
-  useVehicleFeatures,
 } from "@/lib/api/hooks/usePreRideChecklist";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
-import type { PhotoInsightKind, VehicleFeature, VehicleHealthCheckPhoto } from "@/lib/api/types";
+import type { VehicleHealthCheckPhoto } from "@/lib/api/types";
 import { getChecklistStepRoute, getGuardedChecklistStepRoute } from "@/lib/utils/checklistNavigation";
 import { PRE_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
 import { isChecklistPhotoUploaded, pickSubmittedImages, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
@@ -34,11 +33,6 @@ import { useToast } from "@/providers/ToastProvider";
 type HealthKey = "oilLevel" | "coolantLevel" | "safetyEquipment";
 
 const HEALTH_KEYS: readonly HealthKey[] = ["oilLevel", "coolantLevel", "safetyEquipment"];
-const HEALTH_INSIGHT_KINDS: Record<HealthKey, PhotoInsightKind> = {
-  coolantLevel: "COOLANT_LEVEL",
-  oilLevel: "OIL_LEVEL",
-  safetyEquipment: "SAFETY_EQUIPMENT",
-};
 const HEALTH_PHOTO_TYPES: Record<HealthKey, VehicleHealthCheckPhoto> = {
   coolantLevel: "COOLANT_LEVEL",
   oilLevel: "OIL_LEVEL",
@@ -49,15 +43,6 @@ const HEALTH_LABELS: Record<HealthKey, { title: string; subtitle: string }> = {
   coolantLevel: { title: "Coolant Level", subtitle: "Reservoir showing fluid level" },
   safetyEquipment: { title: "Safety Equipment", subtitle: "Warning Triangle, Fire Extinguisher" },
 };
-/** Shown if the Safety Equipment features can't be loaded (same as the mobile app). */
-const FALLBACK_SAFETY_ITEMS: VehicleFeature[] = [
-  { id: "warning-triangle", name: "Warning Triangle", category: "SAFETY_EQUIPMENT", description: "Reflective triangle placed behind the car to warn traffic of a breakdown." },
-  { id: "fire-extinguisher", name: "Fire Extinguisher", category: "SAFETY_EQUIPMENT", description: "Portable extinguisher for putting out a small fire in or around the car." },
-];
-const isRequiredSafetyItem = (feature: VehicleFeature) =>
-  feature.name.replace(/[^a-z0-9]/gi, "").toLowerCase() !== "firstaidkit";
-const joinNames = (names: string[]) =>
-  names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 const SELFIE_REQUIREMENTS = [
   "Face clearly visible and well-lit",
   "Uniform/professional attire visible",
@@ -84,24 +69,6 @@ export default function ChecklistStep4Page() {
   const selfieSlot = usePhotoSlots(["selfie"] as const, activeTrackerId ? `selfie:${activeTrackerId}` : undefined);
   const selfie = selfieSlot.photos.selfie;
 
-  // The safety items to photograph come from the vehicle feature catalogue.
-  const vehicleFeaturesQuery = useVehicleFeatures(undefined);
-  const loadedSafetyItems = (vehicleFeaturesQuery.data?.data ?? [])
-    .filter((feature) => feature.category === "SAFETY_EQUIPMENT" && isRequiredSafetyItem(feature))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const safetyItems = loadedSafetyItems.length > 0 ? loadedSafetyItems : FALLBACK_SAFETY_ITEMS;
-  // Optional: one photo per safety item, instead of (or as well as) the group photo.
-  const safetyItemSlots = usePhotoMap(activeTrackerId ? `safety-items:${activeTrackerId}` : undefined);
-  const safetyItemPhotoList = safetyItems.flatMap((item) => (safetyItemSlots.photos[item.id] ? [safetyItemSlots.photos[item.id]] : []));
-  const safetyItemsDone = safetyItems.filter((item) => {
-    const photo = safetyItemSlots.photos[item.id];
-    return photo ? isChecklistPhotoUploaded(photo) : false;
-  }).length;
-  /** Safety is covered by the group photo, or by a photo of every item. */
-  const isSafetyCovered =
-    isChecklistPhotoUploaded(health.photos.safetyEquipment) ||
-    (safetyItems.length > 0 && safetyItemsDone === safetyItems.length);
-
   const stepGate = useStepGate({
     summary: checklistSummary,
     flow: "preRide",
@@ -116,7 +83,6 @@ export default function ChecklistStep4Page() {
   const hasSavedDriverPhotoChecklist = Boolean(checklistSummary?.driverPhoto?.valid);
 
   // Saved on another phone (or this one lost its copy): show what was submitted.
-  // Like the mobile app, the first safety photo fills the group photo slot.
   const submittedQuery = useSubmittedChecklistPhotos(activeTrackerId || undefined, {
     enabled: hasSavedVehicleHealthChecklist || hasSavedDriverPhotoChecklist,
   });
@@ -128,14 +94,14 @@ export default function ChecklistStep4Page() {
     const selfieImage = submittedImagesFor(submittedQuery.data, "DRIVER_PHOTO", "PRE_TRIP")[0];
     if (selfieImage) restoreSelfie({ selfie: selfieImage });
   }, [restoreHealth, restoreSelfie, submittedQuery.data]);
-  const hasPendingUpload = health.hasPendingUpload || selfieSlot.hasPendingUpload || safetyItemSlots.hasPendingUpload;
-  const hasFailedUpload = health.hasFailedUpload || selfieSlot.hasFailedUpload || safetyItemSlots.hasFailedUpload;
+  const hasPendingUpload = health.hasPendingUpload || selfieSlot.hasPendingUpload;
+  const hasFailedUpload = health.hasFailedUpload || selfieSlot.hasFailedUpload;
   const isSubmitting = submitVehicleHealthChecklist.isPending || submitDriverPhotoChecklist.isPending || submitChecklist.isPending;
   const canSubmit =
     (hasSavedVehicleHealthChecklist ||
       (isChecklistPhotoUploaded(health.photos.oilLevel) &&
         isChecklistPhotoUploaded(health.photos.coolantLevel) &&
-        isSafetyCovered)) &&
+        isChecklistPhotoUploaded(health.photos.safetyEquipment))) &&
     (hasSavedDriverPhotoChecklist || isChecklistPhotoUploaded(selfie)) &&
     Boolean(activeTrackerId) &&
     Boolean(checklistSummary) &&
@@ -167,12 +133,7 @@ export default function ChecklistStep4Page() {
             idempotencyKey: vehicleHealthIdempotencyKey,
             payload: {
               checklistTrackerId: activeTrackerId,
-              // Oil and coolant, then every safety photo: the group photo and/or
-              // one per item, all sent as SAFETY_EQUIPMENT.
-              uploadPhotos: [
-                ...HEALTH_KEYS.map((key) => ({ photo: health.photos[key], type: HEALTH_PHOTO_TYPES[key] })),
-                ...safetyItemPhotoList.map((photo) => ({ photo, type: HEALTH_PHOTO_TYPES.safetyEquipment })),
-              ]
+              uploadPhotos: HEALTH_KEYS.map((key) => ({ photo: health.photos[key], type: HEALTH_PHOTO_TYPES[key] }))
                 .filter(({ photo }) => isChecklistPhotoUploaded(photo))
                 .map(({ photo, type }) => ({
                   ...toChecklistUploadedPhoto(photo),
@@ -274,74 +235,14 @@ export default function ChecklistStep4Page() {
           <PhotoUploadCard
             key={key}
             title={HEALTH_LABELS[key].title}
-            subtitle={health.subtitleFor(
-              key,
-              key === "safetyEquipment"
-                ? `${joinNames(safetyItems.map((item) => item.name))} in one photo`
-                : HEALTH_LABELS[key].subtitle,
-            )}
+            subtitle={health.subtitleFor(key, HEALTH_LABELS[key].subtitle)}
             imageUri={health.photos[key].localUri}
             uploading={health.photos[key].status === "uploading"}
             failed={health.photos[key].status === "failed"}
             onClick={() => void health.capture({ key, label: `vehicle-health-${HEALTH_PHOTO_TYPES[key]}` })}
             onRemove={() => void health.remove(key)}
-            footer={
-              <PhotoInsightNote
-                imageUrl={health.photos[key].fileUrl}
-                kind={HEALTH_INSIGHT_KINDS[key]}
-                label={HEALTH_LABELS[key].title}
-                checklistType="PRE_TRIP"
-                trackerId={activeTrackerId}
-              />
-            }
           />
         ))}
-
-        <ChecklistSectionTitle className="mt-2">Safety Items</ChecklistSectionTitle>
-        <p className="text-footnote mb-3 text-text-3">
-          {isSafetyCovered
-            ? "Safety equipment is covered."
-            : safetyItemsDone > 0
-              ? `Photograph the remaining ${safetyItems.length - safetyItemsDone === 1 ? "item" : "items"}, or take one group photo above.`
-              : "Photograph every item here, or take one group photo above."}
-          {safetyItemsDone > 0 && ` ${safetyItemsDone} of ${safetyItems.length} photographed.`}
-        </p>
-        {vehicleFeaturesQuery.isLoading ? (
-          <p className="text-footnote mb-4 flex items-center gap-2 text-text-3">
-            <Spinner size={14} /> Loading safety items...
-          </p>
-        ) : (
-          safetyItems.map((item) => {
-            const photo = safetyItemSlots.photos[item.id];
-
-            return (
-              <PhotoUploadCard
-                key={item.id}
-                title={item.name}
-                subtitle={safetyItemSlots.subtitleFor(
-                  item.id,
-                  item.description?.trim() || `Show the ${item.name.toLowerCase()} clearly`,
-                )}
-                imageUri={photo?.localUri}
-                uploading={photo?.status === "uploading"}
-                failed={photo?.status === "failed"}
-                onClick={() => void safetyItemSlots.capture(item.id, `vehicle-health-${HEALTH_PHOTO_TYPES.safetyEquipment}`)}
-                onRemove={() => void safetyItemSlots.remove(item.id)}
-                footer={
-                  photo ? (
-                    <PhotoInsightNote
-                      imageUrl={photo.fileUrl}
-                      kind="SAFETY_EQUIPMENT"
-                      label={item.name}
-                      checklistType="PRE_TRIP"
-                      trackerId={activeTrackerId}
-                    />
-                  ) : undefined
-                }
-              />
-            );
-          })
-        )}
 
         <ChecklistSectionTitle className="mt-6">Driver Photo</ChecklistSectionTitle>
         <ol className="mb-5 space-y-2">

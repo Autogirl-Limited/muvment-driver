@@ -64,7 +64,7 @@ export default function ChecklistStep3Page() {
   const checklistSummary = checklistSummaryQuery.data?.data;
   // The full accessories catalogue, same as the mobile app: the driver photographs
   // whichever features the car has. Not per vehicle id, which can come back empty.
-  const vehicleFeaturesQuery = useVehicleFeatures(undefined);
+  const vehicleFeaturesQuery = useVehicleFeatures(undefined, { category: "PRIMARY" });
   const savedMetadata = checklistSummary?.interiorPhotos?.metadata;
   const hasSavedInteriorSubmission = checklistSummary?.interiorPhotos?.valid === true;
   const slots = usePhotoSlots(INTERIOR_KEYS, activeTrackerId ? `interior:${activeTrackerId}` : undefined);
