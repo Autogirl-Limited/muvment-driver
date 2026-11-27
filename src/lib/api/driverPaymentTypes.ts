@@ -50,10 +50,19 @@ export type RideTimerResponse = ApiResponse<RideTimer>;
 
 export type RideAction = "start" | "pause" | "resume" | "end";
 
+/** GPS fix sent with Start / End ride as evidence. `capturedTime` is a Lagos local date-time. */
+export interface RideGps {
+  latitude: number;
+  longitude: number;
+  accuracyMeters?: number;
+  capturedTime: string;
+}
+
 export interface RideActionPayload {
   reportedAt?: string;
   reason?: RidePauseReason;
   note?: string;
+  gps?: RideGps;
 }
 
 /* ------------------------------------------------------------------ schedule */

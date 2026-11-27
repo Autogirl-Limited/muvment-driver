@@ -42,6 +42,8 @@ interface AlertDialogProps {
   confirmText?: string;
   confirmVariant?: "primary" | "danger";
   confirmLoading?: boolean;
+  /** Extra content under the message (e.g. a status line). */
+  children?: ReactNode;
 }
 
 export const AlertDialog = ({
@@ -54,6 +56,7 @@ export const AlertDialog = ({
   confirmText = "Submit",
   confirmVariant = "primary",
   confirmLoading = false,
+  children,
 }: AlertDialogProps) => {
   const target = usePortalTarget();
   useLockBodyScroll(open);
@@ -95,6 +98,7 @@ export const AlertDialog = ({
           {title}
         </h2>
         <p className="text-callout mt-2 text-text-2">{message}</p>
+        {children && <div className="mt-4">{children}</div>}
         <div className="mt-5 flex justify-end gap-3">
           <button
             type="button"

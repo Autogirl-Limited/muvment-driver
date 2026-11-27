@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Pause, Play } from "lucide-react";
 
+import { RideLocationNote } from "@/components/trips/RideLocationNote";
 import { END_RIDE_MESSAGE, END_RIDE_TITLE, PauseReasonSheet, RideCounter } from "@/components/trips/RideTimerPanel";
 import { AlertDialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -235,6 +236,7 @@ export default function TripNavigationPage() {
         onEndRide={() => setEndRideConfirmVisible(true)}
         onStartRide={() => void startRide()}
         primaryActionLoading={rideActions.pendingAction === "start" || rideActions.pendingAction === "end"}
+        primaryActionBusyLabel={rideActions.locatingAction ? "Saving location…" : undefined}
         statusLabel={getTripStatusLabel(navigationMode, tripDetails)}
         timerSlot={timerSlot}
         tripId={tripId}
@@ -261,7 +263,13 @@ export default function TripNavigationPage() {
         message={END_RIDE_MESSAGE}
         confirmText="End ride"
         confirmVariant="danger"
-      />
+      >
+        <RideLocationNote
+          target={toMapCoordinate({ lat: dropLat, lng: dropLng })}
+          place="drop-off"
+          active={isEndRideConfirmVisible}
+        />
+      </AlertDialog>
 
       <AlertDialog
         open={isExitConfirmVisible}

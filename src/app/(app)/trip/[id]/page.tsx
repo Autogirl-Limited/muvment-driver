@@ -27,6 +27,7 @@ import {
   getDriverTripStatusLabel,
   getResolvedDriverTripDetailsStatus,
 } from "@/lib/utils/driverTrips";
+import { toMapCoordinate } from "@/lib/utils/geo";
 import { parseLagosMs } from "@/lib/utils/lagosTime";
 import { useToast } from "@/providers/ToastProvider";
 
@@ -263,6 +264,9 @@ export default function TripDetailPage() {
           nowMs={nowMs}
           pendingCount={pendingCount}
           pendingAction={rideActions.pendingAction}
+          locatingAction={rideActions.locatingAction}
+          pickup={toMapCoordinate({ lat: details.pickupLocation?.lat, lng: details.pickupLocation?.lng })}
+          dropOff={toMapCoordinate({ lat: details.dropOffLocation?.lat, lng: details.dropOffLocation?.lng })}
           showStart={status !== "NOT_STARTED"}
           onStart={() => void startRide()}
           onPause={(reason, note) => rideActions.run("pause", { reason, note })}

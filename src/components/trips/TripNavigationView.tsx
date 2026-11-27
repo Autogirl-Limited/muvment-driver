@@ -6,6 +6,7 @@ import { MapContainer, Marker, Polyline, TileLayer, useMap, useMapEvents } from 
 import { ChevronDown, ChevronLeft, ChevronUp, Flag, MapPin, Maximize2, Navigation, Phone } from "lucide-react";
 
 import { fetchGoogleDrivingRoute, isGoogleRoutesConfigured, type GoogleRouteResult } from "@/lib/api/googleRoutes";
+import { fixFromPosition, noteRideFix } from "@/lib/rideTimer/rideGps";
 import { useTripTracker } from "@/lib/tracking/useTripTracker";
 import { clearPickupArrival, readPickupArrival, writePickupArrival } from "@/lib/utils/pickupArrival";
 import { getMapsDirectionsUrl } from "@/lib/utils/deviceActions";
@@ -30,6 +31,8 @@ type TripNavigationViewProps = {
   onStartRide?: () => void;
   onWhatsapp?: () => void;
   primaryActionLoading?: boolean;
+  /** Shown on the primary button while it's busy (defaults to "Updating..."). */
+  primaryActionBusyLabel?: string;
   statusLabel: string;
   /** Ride counter and pause controls, shown in the bottom sheet during the ride. */
   timerSlot?: ReactNode;
@@ -212,6 +215,7 @@ export const TripNavigationView = ({
   onStartRide,
   onWhatsapp,
   primaryActionLoading,
+  primaryActionBusyLabel,
   statusLabel,
   timerSlot,
   tripId,
@@ -256,6 +260,8 @@ export const TripNavigationView = ({
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
         setPermissionState("granted");
+        // Keeps a fresh fix ready for Start / End ride evidence.
+        noteRideFix(fixFromPosition(position));
         setOwnFix({
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
@@ -656,7 +662,7 @@ export const TripNavigationView = ({
               nearPickup ? "bg-success" : "bg-[#E32636]"
             } ${primaryActionLoading ? "opacity-60" : ""}`}
           >
-            {primaryActionLoading ? "Updating..." : primaryActionLabel}
+            {primaryActionLoading ? (primaryActionBusyLabel ?? "Updating...") : primaryActionLabel}
           </button>
         </div>
       </div>

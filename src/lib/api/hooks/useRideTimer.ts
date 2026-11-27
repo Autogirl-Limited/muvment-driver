@@ -22,10 +22,12 @@ import {
   enqueueRideAction,
   flushRideActions,
   getQueuedRideActions,
+  releaseRideAction,
   subscribeToRideActionQueue,
   type QueuedRideAction,
   type RideActionOutcome,
 } from "../../rideTimer/rideActionQueue";
+import { captureRideGps, RIDE_GPS_WAIT_MS } from "../../rideTimer/rideGps";
 import { parseLagosMs, toLagosLocalIso } from "../../utils/lagosTime";
 import { isAppKnownOffline } from "../../utils/networkStatus";
 
@@ -177,34 +179,64 @@ export const RIDE_ACTION_ERROR_TITLES: Record<RideAction, string> = {
 };
 
 const OFFLINE_SAVED_MESSAGE = "Saved on this phone with the time you tapped. It will be sent when you're back online.";
+const LOCATION_OFF_TITLE = "Saved without your location";
+const LOCATION_OFF_MESSAGE: Partial<Record<RideAction, string>> = {
+  start: "Your start time is saved. Turn on location for this app so the pickup point can be confirmed next time.",
+  end: "Your end time is saved. Turn on location for this app so the drop-off point can be confirmed next time.",
+};
+
+/** Start and End ride carry a GPS fix as evidence of where they happened. */
+const takesGps = (action: RideAction) => action === "start" || action === "end";
 
 /**
  * Start / pause / resume / end for one trip. Each action goes through the
  * persistent queue, so it survives going offline or closing the app.
+ *
+ * Start and End are saved the moment the driver taps (that is the recorded
+ * time), then held for at most a few seconds while a GPS fix is attached.
+ * A fresh fix from live sharing is used straight away, so usually there is
+ * no wait at all; no fix or no permission never blocks the ride.
  */
 export const useRideActions = (tripId: string) => {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [pendingAction, setPendingAction] = useState<RideAction | null>(null);
+  const [locating, setLocating] = useState(false);
 
   const run = useCallback(
     async (action: RideAction, body: { reason?: RidePauseReason; note?: string } = {}) => {
       if (!tripId) return { ok: false as const };
 
-      const item = enqueueRideAction(tripId, action, body);
+      const tapAt = Date.now();
+      const withGps = takesGps(action);
+      const item = enqueueRideAction(tripId, action, body, {
+        at: tapAt,
+        // A safety margin past the wait, in case the app is closed mid-read.
+        holdMs: withGps ? RIDE_GPS_WAIT_MS + 3_000 : undefined,
+      });
 
       // Location sharing follows the ride, even before the server confirms.
       if (action === "start") syncTrackingWithStatus(tripId, "ONGOING");
-      if (action === "end") syncTrackingWithStatus(tripId, "COMPLETE");
-
-      if (isAppKnownOffline()) {
-        toast.info("Saved offline", OFFLINE_SAVED_MESSAGE);
-        return { ok: true as const, queued: true };
-      }
 
       setPendingAction(action);
 
       try {
+        if (withGps) {
+          setLocating(true);
+          const capture = await captureRideGps(tapAt).catch(() => ({ gps: null, denied: false }));
+          releaseRideAction(item.id, capture.gps);
+          setLocating(false);
+          if (capture.denied) toast.info(LOCATION_OFF_TITLE, LOCATION_OFF_MESSAGE[action]);
+        }
+
+        // Stop sharing only after the end-of-ride fix has been read.
+        if (action === "end") syncTrackingWithStatus(tripId, "COMPLETE");
+
+        if (isAppKnownOffline()) {
+          toast.info("Saved offline", OFFLINE_SAVED_MESSAGE);
+          return { ok: true as const, queued: true };
+        }
+
         const outcomes = await flushRideActions((sent, timer) => applySentRideAction(queryClient, sent, timer));
         invalidateAfterRideOutcomes(queryClient, outcomes);
         outcomes
@@ -227,13 +259,17 @@ export const useRideActions = (tripId: string) => {
 
         return { ok: true as const, queued: false, timer: mine.timer };
       } finally {
+        setLocating(false);
         setPendingAction(null);
       }
     },
     [queryClient, toast, tripId],
   );
 
-  return { run, pendingAction };
+  /** Start or End is waiting on a GPS fix (only ever a few seconds). */
+  const locatingAction = locating ? pendingAction : null;
+
+  return { run, pendingAction, locatingAction };
 };
 
 /* ------------------------------------------------------------------ schedule */

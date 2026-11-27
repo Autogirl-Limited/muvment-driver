@@ -9,7 +9,7 @@
  * `reportedAt` as the ride time and is safe to replay with the same key.
  */
 import { apiFetchClient, ApiRequestError } from "../api/client";
-import type { RideAction, RideActionPayload, RideTimer, RideTimerResponse } from "../api/types";
+import type { RideAction, RideActionPayload, RideGps, RideTimer, RideTimerResponse } from "../api/types";
 import { isAppKnownOffline, OFFLINE_ERROR_CODE } from "../utils/networkStatus";
 import { storage } from "../utils/storage";
 
@@ -23,6 +23,11 @@ export interface QueuedRideAction {
   idempotencyKey: string;
   createdAt: string;
   attempts: number;
+  /**
+   * Not sent before this time (ms): the app is still reading GPS for it.
+   * Saved with the action, so a closed app sends it anyway once it passes.
+   */
+  holdUntil?: number;
 }
 
 export type RideActionOutcome =
@@ -77,20 +82,36 @@ export const enqueueRideAction = (
   tripId: string,
   action: RideAction,
   body: Omit<RideActionPayload, "reportedAt"> = {},
+  options: { at?: number; holdMs?: number } = {},
 ): QueuedRideAction => {
+  const at = options.at ?? Date.now();
   const item: QueuedRideAction = {
     id: randomId(),
     tripId,
     action,
-    body: { ...body, reportedAt: new Date().toISOString() },
+    body: { ...body, reportedAt: new Date(at).toISOString() },
     idempotencyKey: `ride-${action}-${tripId}-${randomId()}`,
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(at).toISOString(),
     attempts: 0,
+    ...(options.holdMs ? { holdUntil: at + options.holdMs } : {}),
   };
 
   writeQueue([...readQueue(), item]);
   return item;
 };
+
+/** Adds the GPS fix (if any) to a held action and lets it be sent. */
+export const releaseRideAction = (id: string, gps?: RideGps | null) =>
+  writeQueue(
+    readQueue().map((item) => {
+      if (item.id !== id) return item;
+      const { holdUntil: _released, ...rest } = item;
+      void _released;
+      return gps ? { ...rest, body: { ...rest.body, gps } } : rest;
+    }),
+  );
+
+const isHeld = (item: QueuedRideAction) => item.holdUntil !== undefined && Date.now() < item.holdUntil;
 
 const removeFromQueue = (id: string) => writeQueue(readQueue().filter((item) => item.id !== id));
 
@@ -156,7 +177,8 @@ export const flushRideActions = (
     while (!isAppKnownOffline()) {
       const next = readQueue()[0];
 
-      if (!next) {
+      // Still reading GPS for it; later actions wait too, to keep the order.
+      if (!next || isHeld(next)) {
         break;
       }
 

@@ -236,6 +236,8 @@ const handle = async (request: NextRequest, path: string) => {
       canSeeApi: false,
       emailVerified: true,
       phoneVerified: false,
+      // The app sends a driver without a photo to add one first.
+      profilePictureUrl: "/icons/icon-192.png",
     });
   }
   if (path === "users/change-password") {

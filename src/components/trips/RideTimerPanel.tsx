@@ -16,7 +16,10 @@ import {
   isRidingStatus,
   type RideClock,
 } from "@/lib/rideTimer/rideClock";
+import type { MapCoordinate } from "@/lib/utils/geo";
 import { formatClock, formatLagosTime, formatMinutes } from "@/lib/utils/lagosTime";
+
+import { RideLocationNote } from "./RideLocationNote";
 
 export const END_RIDE_TITLE = "End the ride?";
 export const END_RIDE_MESSAGE = "End the ride only when the customer has left the car for the last time.";
@@ -253,6 +256,10 @@ interface RideTimerPanelProps {
   nowMs: number;
   pendingCount: number;
   pendingAction?: string | null;
+  /** Start or End waiting a moment for a GPS fix. */
+  locatingAction?: string | null;
+  pickup?: MapCoordinate | null;
+  dropOff?: MapCoordinate | null;
   onStart: () => void;
   onPause: (reason: RidePauseReason, note?: string) => Promise<unknown> | void;
   onResume: () => void;
@@ -268,6 +275,9 @@ export const RideTimerPanel = ({
   nowMs,
   pendingCount,
   pendingAction,
+  locatingAction,
+  pickup,
+  dropOff,
   onStart,
   onPause,
   onResume,
@@ -308,9 +318,10 @@ export const RideTimerPanel = ({
               ? `Starts in ${formatClock(clock.secondsToStart)}. If you haven't started by then, the counter starts by itself.`
               : "The booked start has passed. The counter starts by itself shortly."}
           </p>
-          <div className="mt-4">
+          <RideLocationNote className="mt-3" target={pickup} place="pickup" />
+          <div className="mt-3">
             <Button size="md" loading={pendingAction === "start"} icon={<Play size={18} />} onClick={onStart}>
-              Start ride
+              {locatingAction === "start" ? "Saving location…" : "Start ride"}
             </Button>
           </div>
         </div>
@@ -330,7 +341,7 @@ export const RideTimerPanel = ({
               </Button>
             )}
             <Button variant="danger" size="md" loading={pendingAction === "end"} icon={<Square size={16} />} onClick={() => setEndConfirmOpen(true)}>
-              End ride
+              {locatingAction === "end" ? "Saving location…" : "End ride"}
             </Button>
           </div>
         </>
@@ -364,7 +375,9 @@ export const RideTimerPanel = ({
         message={END_RIDE_MESSAGE}
         confirmText="End ride"
         confirmVariant="danger"
-      />
+      >
+        <RideLocationNote target={dropOff} place="drop-off" active={isEndConfirmOpen} />
+      </AlertDialog>
     </section>
   );
 };
