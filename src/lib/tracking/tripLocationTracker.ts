@@ -233,6 +233,76 @@ const stopWatch = () => {
   watchId = null;
 };
 
+/* ------------------------------------------------------------------ permission recovery
+   A refused watch is dead: browsers stop it for good. So when the driver turns
+   location back on, sharing has to start a new watch itself. */
+let permissionStatus: PermissionStatus | null = null;
+
+const beginWatch = () => {
+  if (!state.tripId || typeof navigator === "undefined" || !("geolocation" in navigator)) {
+    return;
+  }
+  stopWatch();
+  watchId = navigator.geolocation.watchPosition(
+    (position) => {
+      if (state.problem === "permission") {
+        setState({ problem: null });
+      }
+      handlePosition(position);
+    },
+    (error) => {
+      if (error.code === error.PERMISSION_DENIED) {
+        stopWatch();
+        setState({ problem: "permission" });
+        listenForPermissionChange();
+      }
+    },
+    { enableHighAccuracy: true, maximumAge: 2_000, timeout: 20_000 },
+  );
+};
+
+/** Restarts sharing after location was refused, if the browser may now allow it. */
+export const retryTripTracking = () => {
+  if (!state.tripId || state.problem !== "permission") {
+    return;
+  }
+  // Still refused in the browser's settings: a new watch would only fail again.
+  if (permissionStatus?.state === "denied") {
+    return;
+  }
+  recoverWatch();
+};
+
+/** Clears the refusal (the banner shows "Starting…") and starts one new watch. */
+const recoverWatch = () => {
+  setState({ problem: null, status: state.lastFix ? state.status : "starting" });
+  beginWatch();
+};
+
+/** Another part of the app got a GPS fix, so access is back: share again. */
+export const notifyLocationAvailable = () => {
+  if (state.tripId && state.problem === "permission") {
+    recoverWatch();
+  }
+};
+
+const listenForPermissionChange = () => {
+  if (permissionStatus || typeof navigator === "undefined" || !navigator.permissions?.query) {
+    return;
+  }
+  navigator.permissions
+    .query({ name: "geolocation" as PermissionName })
+    .then((status) => {
+      permissionStatus = status;
+      status.addEventListener("change", () => {
+        if (status.state !== "denied") {
+          retryTripTracking();
+        }
+      });
+    })
+    .catch(() => undefined);
+};
+
 /**
  * Starts sharing for a trip. Idempotent: calling it again for the same trip does nothing;
  * calling it for another trip switches over. Never throws; problems surface in the state.
@@ -262,21 +332,7 @@ export const startTripTracking = async (tripId: string): Promise<void> => {
   }
 
   ensureFlushTimer();
-  stopWatch();
-  watchId = navigator.geolocation.watchPosition(
-    (position) => {
-      if (state.problem === "permission") {
-        setState({ problem: null });
-      }
-      handlePosition(position);
-    },
-    (error) => {
-      if (error.code === error.PERMISSION_DENIED) {
-        setState({ problem: "permission" });
-      }
-    },
-    { enableHighAccuracy: true, maximumAge: 2_000, timeout: 20_000 },
-  );
+  beginWatch();
   setState({ mode: "foreground" });
   void holdScreenAwake();
 };
@@ -317,6 +373,8 @@ if (typeof document !== "undefined") {
     if (document.visibilityState === "visible" && state.tripId) {
       void flushTripLocations(true);
       void holdScreenAwake();
+      // Back from the phone's settings, maybe with location turned on again.
+      retryTripTracking();
     }
   });
   window.addEventListener("online", () => {

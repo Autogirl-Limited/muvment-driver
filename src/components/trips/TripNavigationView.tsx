@@ -7,6 +7,7 @@ import { ChevronDown, ChevronLeft, ChevronUp, Flag, MapPin, Maximize2, Navigatio
 
 import { fetchGoogleDrivingRoute, isGoogleRoutesConfigured, type GoogleRouteResult } from "@/lib/api/googleRoutes";
 import { fixFromPosition, noteRideFix } from "@/lib/rideTimer/rideGps";
+import { retryTripTracking } from "@/lib/tracking/tripLocationTracker";
 import { useTripTracker } from "@/lib/tracking/useTripTracker";
 import { clearPickupArrival, readPickupArrival, writePickupArrival } from "@/lib/utils/pickupArrival";
 import { getMapsDirectionsUrl } from "@/lib/utils/deviceActions";
@@ -406,7 +407,11 @@ export const TripNavigationView = ({
 
   const sharing = (() => {
     if (tracker.problem === "permission") {
-      return { tone: "#D92D20", label: "Location access is off. Your passenger can't see you." };
+      return {
+        tone: "#D92D20",
+        label: "Location is off, so your passenger can't see you. Turn it on, then tap to share again",
+        onRetry: retryTripTracking,
+      };
     }
     if (tracker.problem === "unsupported") {
       return { tone: "#D92D20", label: "This browser can't share your location." };
@@ -538,16 +543,27 @@ export const TripNavigationView = ({
           </div>
         </div>
 
-        {sharing && (
-          <div className="glass pointer-events-auto mt-3 inline-flex max-w-full items-center gap-2 rounded-full px-3.5 py-2 shadow-float">
-            {sharing.tone === "#12B76A" ? (
-              <PulseDot color={sharing.tone} />
-            ) : (
-              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: sharing.tone }} />
-            )}
-            <span className="text-caption truncate font-medium text-text">{sharing.label}</span>
-          </div>
-        )}
+        {sharing &&
+          ("onRetry" in sharing ? (
+            // Tappable: after turning location back on, the driver can restart sharing at once.
+            <button
+              type="button"
+              onClick={sharing.onRetry}
+              className="glass pressable pointer-events-auto mt-3 flex max-w-full items-start gap-2 rounded-2xl px-3.5 py-2 text-left shadow-float"
+            >
+              <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ background: sharing.tone }} />
+              <span className="text-caption font-medium text-text">{sharing.label}</span>
+            </button>
+          ) : (
+            <div className="glass pointer-events-auto mt-3 inline-flex max-w-full items-center gap-2 rounded-full px-3.5 py-2 shadow-float">
+              {sharing.tone === "#12B76A" ? (
+                <PulseDot color={sharing.tone} />
+              ) : (
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: sharing.tone }} />
+              )}
+              <span className="text-caption truncate font-medium text-text">{sharing.label}</span>
+            </div>
+          ))}
       </div>
 
       {cameraMode === "free" && driverCoordinate && (

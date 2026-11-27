@@ -15,7 +15,7 @@
 import type { RideGps } from "../api/types";
 import { toLagosLocalIso } from "../utils/lagosTime";
 import { getDistanceMeters, isValidCoordinate, type MapCoordinate } from "../utils/geo";
-import { getTrackerState, subscribeToTracker } from "../tracking/tripLocationTracker";
+import { getTrackerState, notifyLocationAvailable, subscribeToTracker } from "../tracking/tripLocationTracker";
 
 /** Backend defaults (`tracking.arrival-radius-meters`, `tracking.max-accuracy-meters`). */
 export const RIDE_GPS_RADIUS_METERS = 150;
@@ -63,6 +63,8 @@ export const noteRideFix = (fix: RideFix) => {
   if (!isValidCoordinate(fix) || !Number.isFinite(fix.timestamp)) return;
   if (isBetter(fix, lastFix)) lastFix = fix;
   if (permission !== "granted") permission = "granted";
+  // Proof location works again: live sharing can restart if it had been refused.
+  notifyLocationAvailable();
   emit();
 };
 
