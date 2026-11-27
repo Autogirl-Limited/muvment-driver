@@ -7,6 +7,7 @@ import type {
   LoginResponse,
   RefreshTokenResponse,
 } from "@/lib/api/types";
+import { SIGN_IN_ERRORS, WRONG_CREDENTIALS_MESSAGE } from "@/lib/utils/signInErrors";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") ?? "";
 
@@ -110,7 +111,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
 
         if (!API_URL) {
-          throw new LoginError("The API URL is not configured.");
+          throw new LoginError(SIGN_IN_ERRORS.apiUrlMissing);
         }
 
         let response: Response;
@@ -123,9 +124,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             cache: "no-store",
           });
         } catch {
-          throw new LoginError(
-            "Unable to reach the server. Please check your connection and try again.",
-          );
+          throw new LoginError(SIGN_IN_ERRORS.backendUnreachable);
         }
 
         const payload = (await response.json().catch(() => undefined)) as
@@ -134,15 +133,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           | undefined;
 
         if (!response.ok) {
+          const unavailable = SIGN_IN_ERRORS.backendStatus(response.status);
+          const isRejection = isRefreshTokenRejected(response.status);
+
+          // The backend's wording is only meant for drivers when it rejects or
+          // rate-limits a login; other statuses can carry technical text.
+          if (!isRejection && response.status !== 429) {
+            throw new LoginError(unavailable);
+          }
+
           throw new LoginError(
-            getApiMessage(payload, "Please check your email and password."),
+            getApiMessage(payload, isRejection ? WRONG_CREDENTIALS_MESSAGE : unavailable),
           );
         }
 
         const data = (payload as LoginResponse | undefined)?.data;
 
         if (!data?.accessToken || !data.refreshToken) {
-          throw new LoginError("Invalid login response from server. Please try again.");
+          throw new LoginError(SIGN_IN_ERRORS.invalidResponse);
         }
 
         return {

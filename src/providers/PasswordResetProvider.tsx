@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 interface PasswordResetContextValue {
   email: string;
@@ -31,25 +31,25 @@ const readInitial = () => {
 export const PasswordResetProvider = ({ children }: { children: ReactNode }) => {
   const [state, setState] = useState(readInitial);
 
-  const value = useMemo(() => {
-    const persist = (next: { email: string; otp: string }) => {
-      setState(next);
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(state));
+    } catch {
+      // Best effort only.
+    }
+  }, [state]);
 
-      try {
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
-      } catch {
-        // Best effort only.
-      }
-    };
-
-    return {
+  // Each setter builds on the latest state, so calling two in a row keeps both changes.
+  const value = useMemo(
+    () => ({
       email: state.email,
       otp: state.otp,
-      setEmail: (email: string) => persist({ ...state, email }),
-      setOtp: (otp: string) => persist({ ...state, otp }),
-      clearResetState: () => persist({ email: "", otp: "" }),
-    };
-  }, [state]);
+      setEmail: (email: string) => setState((current) => ({ ...current, email })),
+      setOtp: (otp: string) => setState((current) => ({ ...current, otp })),
+      clearResetState: () => setState({ email: "", otp: "" }),
+    }),
+    [state],
+  );
 
   return <PasswordResetContext.Provider value={value}>{children}</PasswordResetContext.Provider>;
 };

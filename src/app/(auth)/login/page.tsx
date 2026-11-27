@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Screen } from "@/components/ui/Screen";
 import { TextField } from "@/components/ui/TextField";
 import { Wordmark } from "@/components/layout/Logo";
+import { getSignInErrorMessage, SIGN_IN_ERRORS } from "@/lib/utils/signInErrors";
 import { storage } from "@/lib/utils/storage";
 import { useToast } from "@/providers/ToastProvider";
 
@@ -68,10 +69,7 @@ export default function LoginPage() {
       });
 
       if (!result || result.error) {
-        const message =
-          result?.code && result.code !== "credentials"
-            ? result.code
-            : "Check your email and password, then try again.";
+        const message = getSignInErrorMessage(result?.error, result?.code);
 
         setBackendError(message);
         toast.error("Login failed", message);
@@ -84,7 +82,7 @@ export default function LoginPage() {
       router.replace(next && next.startsWith("/") ? next : "/home");
       router.refresh();
     } catch {
-      const message = "Unable to reach the server. Please check your connection and try again.";
+      const message = SIGN_IN_ERRORS.network;
 
       setBackendError(message);
       toast.error("Login failed", message);
