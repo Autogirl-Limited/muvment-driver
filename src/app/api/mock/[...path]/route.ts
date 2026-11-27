@@ -266,6 +266,18 @@ const handle = async (request: NextRequest, path: string) => {
   if (/^driver-app\/trips\/[^/]+\/locations$/.test(path)) {
     return ok({ accepted: 1, trackingActive: true, phase: "EN_ROUTE_TO_PICKUP", nextUploadIntervalSeconds: 5 });
   }
+  if (path === "driver-app/checklists/outstanding") {
+    // Today's pre-ride report is open (tracker-1), nothing overdue.
+    return ok({
+      blocking: true,
+      message: "Finish your Pre-Ride report for today before you start work.",
+      hasTripToday: true,
+      today: new Date(Date.now() + 3_600_000).toISOString().slice(0, 10),
+      reports: [
+        { kind: "PRE_RIDE", reportType: "DAILY", checklistTrackerId: "tracker-1", date: new Date(Date.now() + 3_600_000).toISOString().slice(0, 10), state: "IN_PROGRESS", blocking: true, dueReason: "TRIP_TODAY" },
+      ],
+    });
+  }
   if (path === "driver-app/checklists/today") {
     return ok({ checklistTrackerId: "tracker-1", state: "PRE_TRIP_IN_PROGRESS", preTripSummary: PRE_SUMMARY });
   }

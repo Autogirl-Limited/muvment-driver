@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, Car, ChevronRight, ClipboardList, Flag, ReceiptText, RefreshCw } from "lucide-react";
+import { CalendarDays, Car, ChevronRight, ReceiptText, RefreshCw } from "lucide-react";
 
 import { BrandAvatar } from "@/components/brand/BrandAvatar";
 import { NotificationBellButton } from "@/components/notifications/NotificationBellButton";
@@ -13,24 +13,23 @@ import { Screen } from "@/components/ui/Screen";
 import { CardSkeleton } from "@/components/ui/Skeleton";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { getApiErrorMessage } from "@/lib/api/errors";
-import { useTodayChecklist } from "@/lib/api/hooks/usePreRideChecklist";
+import { useOutstandingPilotReports, useTodayChecklist } from "@/lib/api/hooks/usePreRideChecklist";
+import { PilotReportBlockedBanner, PilotReportList } from "@/components/checklist/PilotReportList";
+import { usePilotReportGate } from "@/providers/PilotReportGateProvider";
 import { useDriverTripStatistics, useDriverTrips } from "@/lib/api/hooks/useTrips";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import { ReportContinueCard } from "@/components/checklist/ReportContinueCard";
-import { clearChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import { getDriverTripTab, toDriverTripCardModel } from "@/lib/utils/driverTrips";
 import { parseLagosMs, toLagosDate } from "@/lib/utils/lagosTime";
 import { getUserDisplayName } from "@/lib/utils/userProfile";
 import { useScreenThemeColor } from "@/providers/ThemeProvider";
-import { useToast } from "@/providers/ToastProvider";
 
 /** Top of the header gradient, so the status bar blends into it. */
 const HOME_HEADER_TOP_COLOR = "#516C9F";
 
 export default function HomePage() {
   const router = useRouter();
-  const toast = useToast();
-  const [isOpeningPilotReport, setIsOpeningPilotReport] = useState(false);
+  const pilotReports = usePilotReportGate();
   useScreenThemeColor(HOME_HEADER_TOP_COLOR);
   const currentUserQuery = useCurrentUser();
   const driverTripStatisticsQuery = useDriverTripStatistics();
@@ -42,6 +41,8 @@ export default function HomePage() {
   // overtime past midnight) stays on Home until the driver ends it.
   const recentTripsQuery = useDriverTrips({ page: 0, size: 20 });
   const todayChecklistQuery = useTodayChecklist();
+  // Its own observer, so arriving on Home refetches a stale list (a trip ended elsewhere, midnight).
+  const outstandingQuery = useOutstandingPilotReports();
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening";
@@ -86,10 +87,18 @@ export default function HomePage() {
   const todayChecklist = todayChecklistQuery.data?.data;
   const todayChecklistState = todayChecklist?.state ?? todayChecklist?.status;
   const todayChecklistTrackerId = todayChecklist?.checklistTrackerId?.trim();
-  const shouldShowPreRidePilotReport =
-    todayChecklistState === "NOT_STARTED" || todayChecklistState === "PRE_TRIP_IN_PROGRESS";
-  const shouldShowPostRidePilotReport =
-    todayChecklistState === "PRE_TRIP_COMPLETED" || todayChecklistState === "POST_TRIP_IN_PROGRESS";
+  const outstanding = pilotReports.outstanding;
+  const owedReports = outstanding?.reports ?? [];
+  // An open Pre-Ride report shows its progress ring instead of a plain row.
+  const preRideInProgress = owedReports.find(
+    (report) => report.kind === "PRE_RIDE" && report.state === "IN_PROGRESS" && report.checklistTrackerId,
+  );
+  const listedReports = owedReports.filter((report) => report !== preRideInProgress);
+  // Emergency / newly assigned bookings can still be reported against their invoice.
+  const showInvoiceReport =
+    (todayChecklistState === "NOT_STARTED" && !todayChecklistTrackerId) ||
+    todayChecklistState === "PRE_TRIP_COMPLETED" ||
+    todayChecklistState === "POST_TRIP_IN_PROGRESS";
   const todayTrips = homeTrips.map((trip) => toDriverTripCardModel(trip));
   const tripStatistics = driverTripStatisticsQuery.data?.data;
   const tripsErrorMessage = getApiErrorMessage(driverTripsQuery.error);
@@ -108,64 +117,11 @@ export default function HomePage() {
       driverTripsQuery.refetch(),
       recentTripsQuery.refetch(),
       todayChecklistQuery.refetch(),
+      outstandingQuery.refetch(),
       driverTripStatisticsQuery.refetch(),
     ]);
-  }, [driverTripStatisticsQuery, driverTripsQuery, recentTripsQuery, todayChecklistQuery]);
+  }, [driverTripStatisticsQuery, driverTripsQuery, outstandingQuery, recentTripsQuery, todayChecklistQuery]);
   const pull = usePullToRefresh(refresh);
-
-  const handleMissingTracker = async () => {
-    const refreshed = await todayChecklistQuery.refetch();
-    const trackerId = refreshed.data?.data.checklistTrackerId?.trim();
-
-    if (trackerId) {
-      return trackerId;
-    }
-
-    toast.error("Pilot Report unavailable", "We could not find today's report yet. Please refresh and try again.");
-    return undefined;
-  };
-
-  const openPreRideReport = async () => {
-    if (isOpeningPilotReport) return;
-
-    setIsOpeningPilotReport(true);
-
-    try {
-      if (todayChecklistTrackerId) {
-        router.push(`/checklist/intro?trackerId=${encodeURIComponent(todayChecklistTrackerId)}`);
-        return;
-      }
-
-      if (todayChecklistState !== "NOT_STARTED") {
-        const trackerId = await handleMissingTracker();
-        if (trackerId) {
-          router.push(`/checklist/intro?trackerId=${encodeURIComponent(trackerId)}`);
-        }
-        return;
-      }
-
-      clearChecklistVehicleSelection(currentUser?.userId);
-      router.push("/checklist/intro");
-    } finally {
-      setIsOpeningPilotReport(false);
-    }
-  };
-
-  const openPostRideReport = async () => {
-    if (isOpeningPilotReport) return;
-
-    setIsOpeningPilotReport(true);
-
-    try {
-      const trackerId = todayChecklistTrackerId ?? await handleMissingTracker();
-
-      if (trackerId) {
-        router.push(`/checklist/intro?flow=postRide&trackerId=${encodeURIComponent(trackerId)}`);
-      }
-    } finally {
-      setIsOpeningPilotReport(false);
-    }
-  };
 
   return (
     <Screen withTabBar {...pull.bind}>
@@ -203,7 +159,7 @@ export default function HomePage() {
         />
       </div>
 
-      {todayChecklistQuery.isError && (
+      {!outstanding && pilotReports.isLoading === false && todayChecklistQuery.isError && (
         <div className="mb-5 px-5">
           <button
             type="button"
@@ -222,36 +178,23 @@ export default function HomePage() {
         </div>
       )}
 
-      {(shouldShowPreRidePilotReport || shouldShowPostRidePilotReport) && (
-        <div className="mb-5 space-y-3 px-5">
-          {todayChecklistState === "PRE_TRIP_IN_PROGRESS" && todayChecklistTrackerId && (
-            <ReportContinueCard trackerId={todayChecklistTrackerId} />
+      {(owedReports.length > 0 || showInvoiceReport) && (
+        <section className="mb-5 space-y-3 px-5" aria-label="Pilot reports">
+          {owedReports.length > 0 && <p className="text-eyebrow text-text-3">Pilot reports</p>}
+          {outstanding?.blocking && <PilotReportBlockedBanner message={outstanding.message} />}
+
+          {preRideInProgress?.checklistTrackerId && <ReportContinueCard trackerId={preRideInProgress.checklistTrackerId} />}
+
+          {outstanding && listedReports.length > 0 && (
+            <PilotReportList
+              reports={listedReports}
+              today={outstanding.today}
+              onOpen={pilotReports.openReport}
+              opening={pilotReports.opening}
+            />
           )}
 
-          {shouldShowPreRidePilotReport && !(todayChecklistState === "PRE_TRIP_IN_PROGRESS" && todayChecklistTrackerId) && (
-            <button
-              type="button"
-              onClick={() => void openPreRideReport()}
-              disabled={isOpeningPilotReport}
-              className="card pressable flex w-full items-center gap-3 p-4 text-left disabled:cursor-wait disabled:opacity-70"
-            >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-soft text-[#3538CD] dark:text-accent">
-                <ClipboardList size={20} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="text-body block font-semibold text-text">Pre Ride Pilot Report</span>
-                <span className="text-footnote block text-text-3">
-                  {isOpeningPilotReport
-                    ? "Preparing your report..."
-                    : "Complete this before your first ride today."}
-                </span>
-              </span>
-              <ChevronRight size={20} className="text-text-4" />
-            </button>
-          )}
-
-          {/* Also after the pre-ride is sent: the booking's vehicle can still be looked up. */}
-          {((todayChecklistState === "NOT_STARTED" && !todayChecklistTrackerId) || shouldShowPostRidePilotReport) && (
+          {showInvoiceReport && (
             <button
               type="button"
               onClick={() => router.push("/checklist/invoice")}
@@ -267,26 +210,7 @@ export default function HomePage() {
               <ChevronRight size={20} className="text-text-4" />
             </button>
           )}
-
-          {shouldShowPostRidePilotReport && (
-            <button
-              type="button"
-              onClick={() => void openPostRideReport()}
-              disabled={isOpeningPilotReport}
-              className="card pressable flex w-full items-center gap-3 p-4 text-left disabled:cursor-wait disabled:opacity-70"
-            >
-              {/* Amber, so the end-of-day report reads apart from the morning one. */}
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-warning-soft text-warning-text">
-                <Flag size={20} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="text-body block font-semibold text-text">Done for the day?</span>
-                <span className="text-footnote block text-text-3">Submit your Post Ride Pilot Report.</span>
-              </span>
-              <ChevronRight size={20} className="text-text-4" />
-            </button>
-          )}
-        </div>
+        </section>
       )}
 
       <div className="px-5">

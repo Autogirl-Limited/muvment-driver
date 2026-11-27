@@ -10,6 +10,7 @@ import { RideActionQueueSync } from "@/components/system/RideActionQueueSync";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import { resumeTripTrackingIfNeeded } from "@/lib/tracking/tripLocationTracker";
 import { InstallPromptProvider } from "@/providers/InstallPromptProvider";
+import { PilotReportGateProvider } from "@/providers/PilotReportGateProvider";
 
 /**
  * Wraps every signed-in screen: live notification socket, resuming location
@@ -58,7 +59,7 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
         <NotificationSocketBridge />
         <RideActionQueueSync />
         <PushRegistration />
-        {hydrated && !needsProfilePhoto ? children : null}
+        {hydrated && !needsProfilePhoto ? <PilotReportGateProvider>{children}</PilotReportGateProvider> : null}
         <InstallSheet />
       </div>
     </InstallPromptProvider>

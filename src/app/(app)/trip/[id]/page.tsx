@@ -29,6 +29,7 @@ import {
 } from "@/lib/utils/driverTrips";
 import { toMapCoordinate } from "@/lib/utils/geo";
 import { parseLagosMs } from "@/lib/utils/lagosTime";
+import { usePilotReportGate } from "@/providers/PilotReportGateProvider";
 import { useToast } from "@/providers/ToastProvider";
 
 const compact = (value?: string | null) => value?.trim() || undefined;
@@ -86,6 +87,7 @@ export default function TripDetailPage() {
   });
   const transitionDriverTripStatus = useTransitionDriverTripStatus();
   const rideActions = useRideActions(tripId);
+  const pilotReports = usePilotReportGate();
   // Ride actions saved offline are shown as if already applied.
   const { details, pendingCount } = useTripWithQueuedRideActions(tripId, driverTripQuery.data?.data);
   const backendStatus = getResolvedDriverTripDetailsStatus(details);
@@ -149,6 +151,11 @@ export default function TripDetailPage() {
       return;
     }
 
+    // Check-in and heading to pickup start the day's work: pilot reports first.
+    if ((nextStatus === "CHECKED_IN" || nextStatus === "AWAITING_PICKUP") && !pilotReports.requireReportsDone()) {
+      return;
+    }
+
     try {
       await transitionDriverTripStatus.mutateAsync({ driverTripStatus: nextStatus, tripId });
 
@@ -162,6 +169,7 @@ export default function TripDetailPage() {
         router.replace(`/trip-navigation/${encodeURIComponent(tripId)}?mode=${openNavigation}`);
       }
     } catch (error) {
+      if (pilotReports.handleBlockedError(error)) return;
       toast.error("Status update failed", getApiErrorMessage(error) ?? "Please try again.");
     }
   };
@@ -170,6 +178,7 @@ export default function TripDetailPage() {
     router.push(`/trip-navigation/${encodeURIComponent(tripId)}?mode=${mode}`);
 
   const startRide = async () => {
+    if (!pilotReports.requireReportsDone()) return;
     const result = await rideActions.run("start");
     if (result.ok) {
       router.replace(`/trip-navigation/${encodeURIComponent(tripId)}?mode=dropoff`);

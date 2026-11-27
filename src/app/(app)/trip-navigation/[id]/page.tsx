@@ -21,6 +21,7 @@ import { getPhoneUrl, getWhatsAppUrl, openExternalUrl } from "@/lib/utils/device
 import { getDriverTripStatusLabel, getResolvedDriverTripDetailsStatus } from "@/lib/utils/driverTrips";
 import { toMapCoordinate } from "@/lib/utils/geo";
 import type { TripNavigationMode } from "@/components/trips/TripNavigationView";
+import { usePilotReportGate } from "@/providers/PilotReportGateProvider";
 import { useToast } from "@/providers/ToastProvider";
 
 // Leaflet touches `window` at import time, so the map view must skip SSR.
@@ -72,6 +73,7 @@ export default function TripNavigationPage() {
   const requestedMode = searchParams.get("mode");
   const driverTripQuery = useDriverTrip(tripId || undefined);
   const rideActions = useRideActions(tripId);
+  const pilotReports = usePilotReportGate();
   const { details: tripDetails } = useTripWithQueuedRideActions(tripId, driverTripQuery.data?.data);
   const resolvedTripStatus = getResolvedDriverTripDetailsStatus(tripDetails);
   useEnsureTripTracking(tripId, resolvedTripStatus);
@@ -117,6 +119,8 @@ export default function TripNavigationPage() {
       toast.error("Trip unavailable", "Please go back and select the trip again.");
       return;
     }
+
+    if (!pilotReports.requireReportsDone()) return;
 
     try {
       const result = await rideActions.run("start");

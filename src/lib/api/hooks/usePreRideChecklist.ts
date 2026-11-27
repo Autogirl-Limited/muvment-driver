@@ -11,6 +11,7 @@ import type {
   ApiErrorResponse,
   ApiResponse,
   ChecklistInvoiceVehicle,
+  OutstandingPilotReportsResponse,
   ChecklistInvoiceVehicleData,
   ChecklistInvoiceVehiclesResponse,
   ChecklistTrackersResponse,
@@ -319,6 +320,30 @@ export const usePostRideChecklistAggregate = (
     },
     enabled: Boolean(trackerId) && (options.enabled ?? true),
     staleTime: 15_000,
+  });
+
+/**
+ * Under the today-checklist key, so everything that refreshes today's checklist
+ * (report submits, ride start/end) refreshes this too.
+ */
+export const OUTSTANDING_PILOT_REPORTS_QUERY_KEY = [...TODAY_CHECKLIST_QUERY_KEY, "outstanding"] as const;
+
+/** Pilot reports the driver still owes, and whether they block new work. */
+export const useOutstandingPilotReports = (options: { enabled?: boolean } = {}) =>
+  useQuery<OutstandingPilotReportsResponse, Error>({
+    queryKey: OUTSTANDING_PILOT_REPORTS_QUERY_KEY,
+    queryFn: async () => {
+      const response = await apiFetchClient.get<OutstandingPilotReportsResponse>(
+        `${DRIVER_APP_CHECKLISTS_PATH}/outstanding`,
+      );
+
+      return response.data;
+    },
+    enabled: options.enabled ?? true,
+    staleTime: 15_000,
+    // A trip ending (or midnight) can make a report due without any action here.
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   });
 
 export const useTodayChecklist = () =>

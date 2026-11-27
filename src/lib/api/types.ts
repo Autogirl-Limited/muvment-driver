@@ -51,6 +51,8 @@ export interface ApiMessageResponse {
 export interface ApiErrorResponse {
   status?: string;
   message?: string | string[];
+  /** Machine-readable reason, e.g. PILOT_REPORTS_REQUIRED. */
+  errorCode?: string;
   timestamp?: string;
 }
 
@@ -785,3 +787,32 @@ export type VehicleFeaturesResponse = ApiResponse<VehicleFeature[]>;
 
 // Ride timer, schedule, push devices, bank account and payment request types.
 export type * from "./driverPaymentTypes";
+
+/* ------------------------------------------------------------------ pilot reports owed */
+export type PilotReportKind = "PRE_RIDE" | "POST_RIDE";
+export type PilotReportDueReason = "TRIP_TODAY" | "PAST_DAY" | "DAY_FINISHED" | "AFTER_LAST_TRIP" | "AFTER_BOOKING";
+
+/** A pilot report the driver still has to do (GET /driver-app/checklists/outstanding). */
+export interface OutstandingPilotReport {
+  kind: PilotReportKind;
+  reportType: "DAILY" | "INVOICE";
+  /** Null for a Pre-Ride report that hasn't been started. */
+  checklistTrackerId?: string | null;
+  /** The Lagos day the report is for, "YYYY-MM-DD". */
+  date: string;
+  state: "NOT_STARTED" | "IN_PROGRESS";
+  /** Blocks check-in, heading to pickup and starting a ride until it is sent. */
+  blocking: boolean;
+  dueReason: PilotReportDueReason;
+  invoiceNumber?: string | null;
+}
+
+export interface OutstandingPilotReports {
+  blocking: boolean;
+  message?: string | null;
+  hasTripToday: boolean;
+  today: string;
+  reports: OutstandingPilotReport[];
+}
+
+export type OutstandingPilotReportsResponse = ApiResponse<OutstandingPilotReports>;
