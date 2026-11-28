@@ -15,7 +15,7 @@ import { CardSkeleton } from "@/components/ui/Skeleton";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { useOutstandingPilotReports, useTodayChecklist } from "@/lib/api/hooks/usePreRideChecklist";
-import { PilotReportBlockedBanner, PilotReportList } from "@/components/checklist/PilotReportList";
+import { OptionalPreRideCard, PilotReportBlockedBanner, PilotReportList } from "@/components/checklist/PilotReportList";
 import { usePilotReportGate } from "@/providers/PilotReportGateProvider";
 import { useDriverTripStatistics, useDriverTrips } from "@/lib/api/hooks/useTrips";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
@@ -114,14 +114,20 @@ export default function HomePage() {
   // Until its first part is sent, an invoice report exists only on this phone.
   const pendingInvoice =
     todayChecklistState === "NOT_STARTED" && !todayChecklistTrackerId ? savedInvoice : undefined;
-  // The server may not list a started report (say, an invoice one on a day with
-  // no trip): keep a way back into it.
+  // The server only lists a Pre-Ride on days it knows of a trip. Otherwise
+  // today's checklist still offers one: to start, or to get back into.
+  const isPreRideUnlisted = !pilotReports.isLoading && !owedReports.some((report) => report.kind === "PRE_RIDE");
   const unlistedTrackerId =
-    todayChecklistState === "PRE_TRIP_IN_PROGRESS" &&
-    !pilotReports.isLoading &&
-    !owedReports.some((report) => report.kind === "PRE_RIDE")
-      ? todayChecklistTrackerId
-      : undefined;
+    isPreRideUnlisted && todayChecklistState === "PRE_TRIP_IN_PROGRESS" ? todayChecklistTrackerId : undefined;
+  const showOptionalPreRide = isPreRideUnlisted && todayChecklistState === "NOT_STARTED" && !pendingInvoice;
+
+  const openOptionalPreRide = () => {
+    router.push(
+      todayChecklistTrackerId
+        ? `/checklist/intro?trackerId=${encodeURIComponent(todayChecklistTrackerId)}`
+        : "/checklist/intro",
+    );
+  };
   const listedReports = owedReports.filter(
     (report) =>
       report !== preRideInProgress &&
@@ -213,12 +219,14 @@ export default function HomePage() {
         </div>
       )}
 
-      {(owedReports.length > 0 || showInvoiceReport || unlistedTrackerId) && (
+      {(owedReports.length > 0 || showInvoiceReport || showOptionalPreRide || unlistedTrackerId) && (
         <section className="mb-5 space-y-3 px-5" aria-label="Pilot reports">
-          {owedReports.length > 0 && <p className="text-eyebrow text-text-3">Pilot reports</p>}
+          {(owedReports.length > 0 || showOptionalPreRide) && <p className="text-eyebrow text-text-3">Pilot reports</p>}
           {outstanding?.blocking && <PilotReportBlockedBanner message={outstanding.message} />}
 
           {continueTrackerId && <ReportContinueCard trackerId={continueTrackerId} />}
+
+          {showOptionalPreRide && <OptionalPreRideCard onOpen={openOptionalPreRide} />}
 
           {pendingInvoice && (
             <InvoiceContinueCard
