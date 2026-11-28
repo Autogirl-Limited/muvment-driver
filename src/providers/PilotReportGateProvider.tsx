@@ -1,18 +1,14 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
-import { usePathname, useRouter } from "next/navigation";
-import { ClipboardCheck, Home } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import { PilotReportBlockedBanner, PilotReportList } from "@/components/checklist/PilotReportList";
-import { TabBar } from "@/components/layout/TabBar";
-import { Button } from "@/components/ui/Button";
 import { Sheet } from "@/components/ui/Dialog";
-import { Screen } from "@/components/ui/Screen";
 import { useOutstandingPilotReports } from "@/lib/api/hooks/usePreRideChecklist";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import type { OutstandingPilotReport, OutstandingPilotReports } from "@/lib/api/types";
-import { isPilotReportGatedPath, isPilotReportsRequiredError, pilotReportRoute } from "@/lib/pilotReports/outstanding";
+import { isPilotReportsRequiredError, pilotReportRoute } from "@/lib/pilotReports/outstanding";
 import { readChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import { PENDING_INVOICE_RESUME_ROUTE } from "@/lib/utils/pendingInvoiceReport";
 
@@ -40,55 +36,13 @@ export const usePilotReportGate = () => {
   return context;
 };
 
-const TAB_ROOTS = ["/trips", "/payments"];
-
-/** Full-screen stop for Trips / Payments while a blocking report is owed. */
-const PilotReportGateScreen = ({ gate, withTabBar }: { gate: PilotReportGate; withTabBar: boolean }) => {
-  const router = useRouter();
-  const outstanding = gate.outstanding;
-
-  return (
-    <>
-      <Screen withTabBar={withTabBar}>
-        <div className="anim-rise-in px-5 pt-[calc(var(--safe-top)+32px)]">
-          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-danger-soft text-danger-text">
-            <ClipboardCheck size={28} />
-          </span>
-          <h1 className="text-title-1 mt-4 text-text">Pilot reports first</h1>
-          <p className="text-callout mt-2 text-text-2">
-            {outstanding?.message ?? "Finish your pilot reports to start work."} This opens again as soon as they&apos;re
-            sent.
-          </p>
-          {outstanding && (
-            <div className="mt-6">
-              <PilotReportList
-                reports={outstanding.reports}
-                today={outstanding.today}
-                onOpen={gate.openReport}
-                opening={gate.opening}
-              />
-            </div>
-          )}
-          <div className="mt-6">
-            <Button variant="outline" icon={<Home size={18} />} onClick={() => router.push("/home")}>
-              Go to Home
-            </Button>
-          </div>
-        </div>
-      </Screen>
-      {withTabBar && <TabBar />}
-    </>
-  );
-};
-
 /**
- * Keeps drivers on top of their pilot reports: Trips and Payments close while
- * a blocking report is owed, and the trip screens ask before starting work.
- * A ride already in progress is never held up.
+ * Keeps drivers on top of their pilot reports: the trip screens ask before
+ * starting work. Every screen stays open, and a ride already in progress is
+ * never held up.
  */
 export const PilotReportGateProvider = ({ children }: { children: ReactNode }) => {
   const router = useRouter();
-  const pathname = usePathname();
   const query = useOutstandingPilotReports();
   const userId = useCurrentUser().data?.data?.userId;
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -140,11 +94,9 @@ export const PilotReportGateProvider = ({ children }: { children: ReactNode }) =
     [blocking, handleBlockedError, openReport, opening, outstanding, query.isLoading, requireReportsDone],
   );
 
-  const gated = blocking && isPilotReportGatedPath(pathname);
-
   return (
     <PilotReportGateContext.Provider value={gate}>
-      {gated ? <PilotReportGateScreen gate={gate} withTabBar={TAB_ROOTS.includes(pathname)} /> : children}
+      {children}
 
       <Sheet open={sheetOpen && blocking} onClose={() => setSheetOpen(false)} title="Pilot reports first">
         <div className="space-y-4 pb-2">
