@@ -8,6 +8,7 @@ import { BrandAvatar } from "@/components/brand/BrandAvatar";
 import { NotificationBellButton } from "@/components/notifications/NotificationBellButton";
 import { StatCard } from "@/components/trips/StatCard";
 import { TripCard } from "@/components/trips/TripCard";
+import { AlertDialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Screen } from "@/components/ui/Screen";
 import { CardSkeleton } from "@/components/ui/Skeleton";
@@ -18,9 +19,12 @@ import { PilotReportBlockedBanner, PilotReportList } from "@/components/checklis
 import { usePilotReportGate } from "@/providers/PilotReportGateProvider";
 import { useDriverTripStatistics, useDriverTrips } from "@/lib/api/hooks/useTrips";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
+import { InvoiceContinueCard } from "@/components/checklist/InvoiceContinueCard";
 import { ReportContinueCard } from "@/components/checklist/ReportContinueCard";
+import { readChecklistVehicleSelection, type ChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import { getDriverTripTab, toDriverTripCardModel } from "@/lib/utils/driverTrips";
 import { parseLagosMs, toLagosDate } from "@/lib/utils/lagosTime";
+import { discardInvoiceSelection, PENDING_INVOICE_RESUME_ROUTE } from "@/lib/utils/pendingInvoiceReport";
 import { getUserDisplayName } from "@/lib/utils/userProfile";
 import { useScreenThemeColor } from "@/providers/ThemeProvider";
 
@@ -43,6 +47,20 @@ export default function HomePage() {
   const todayChecklistQuery = useTodayChecklist();
   // Its own observer, so arriving on Home refetches a stale list (a trip ended elsewhere, midnight).
   const outstandingQuery = useOutstandingPilotReports();
+
+  // An invoice report begun on this phone. Read after mount: it lives in localStorage.
+  const userId = currentUserQuery.data?.data.userId;
+  const [savedInvoice, setSavedInvoice] = useState<ChecklistVehicleSelection>();
+  const [confirmRemoveInvoice, setConfirmRemoveInvoice] = useState(false);
+  useEffect(() => {
+    setSavedInvoice(readChecklistVehicleSelection(userId));
+  }, [today, userId]);
+
+  const removeInvoice = () => {
+    if (userId) discardInvoiceSelection(userId);
+    setSavedInvoice(undefined);
+    setConfirmRemoveInvoice(false);
+  };
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening";
@@ -93,7 +111,24 @@ export default function HomePage() {
   const preRideInProgress = owedReports.find(
     (report) => report.kind === "PRE_RIDE" && report.state === "IN_PROGRESS" && report.checklistTrackerId,
   );
-  const listedReports = owedReports.filter((report) => report !== preRideInProgress);
+  // Until its first part is sent, an invoice report exists only on this phone.
+  const pendingInvoice =
+    todayChecklistState === "NOT_STARTED" && !todayChecklistTrackerId ? savedInvoice : undefined;
+  // The server may not list a started report (say, an invoice one on a day with
+  // no trip): keep a way back into it.
+  const unlistedTrackerId =
+    todayChecklistState === "PRE_TRIP_IN_PROGRESS" &&
+    !pilotReports.isLoading &&
+    !owedReports.some((report) => report.kind === "PRE_RIDE")
+      ? todayChecklistTrackerId
+      : undefined;
+  const listedReports = owedReports.filter(
+    (report) =>
+      report !== preRideInProgress &&
+      // The invoice card stands in for today's unstarted Pre-Ride: one way to continue.
+      !(pendingInvoice && report.kind === "PRE_RIDE" && !report.checklistTrackerId),
+  );
+  const continueTrackerId = preRideInProgress?.checklistTrackerId ?? unlistedTrackerId;
   // Emergency / newly assigned bookings can still be reported against their invoice.
   const showInvoiceReport =
     (todayChecklistState === "NOT_STARTED" && !todayChecklistTrackerId) ||
@@ -178,12 +213,21 @@ export default function HomePage() {
         </div>
       )}
 
-      {(owedReports.length > 0 || showInvoiceReport) && (
+      {(owedReports.length > 0 || showInvoiceReport || unlistedTrackerId) && (
         <section className="mb-5 space-y-3 px-5" aria-label="Pilot reports">
           {owedReports.length > 0 && <p className="text-eyebrow text-text-3">Pilot reports</p>}
           {outstanding?.blocking && <PilotReportBlockedBanner message={outstanding.message} />}
 
-          {preRideInProgress?.checklistTrackerId && <ReportContinueCard trackerId={preRideInProgress.checklistTrackerId} />}
+          {continueTrackerId && <ReportContinueCard trackerId={continueTrackerId} />}
+
+          {pendingInvoice && (
+            <InvoiceContinueCard
+              selection={pendingInvoice}
+              onContinue={() => router.push(PENDING_INVOICE_RESUME_ROUTE)}
+              onChange={() => router.push("/checklist/invoice")}
+              onRemove={() => setConfirmRemoveInvoice(true)}
+            />
+          )}
 
           {outstanding && listedReports.length > 0 && (
             <PilotReportList
@@ -194,7 +238,7 @@ export default function HomePage() {
             />
           )}
 
-          {showInvoiceReport && (
+          {showInvoiceReport && !pendingInvoice && (
             <button
               type="button"
               onClick={() => router.push("/checklist/invoice")}
@@ -212,6 +256,17 @@ export default function HomePage() {
           )}
         </section>
       )}
+
+      <AlertDialog
+        open={confirmRemoveInvoice}
+        onClose={() => setConfirmRemoveInvoice(false)}
+        onConfirm={removeInvoice}
+        title="Remove this invoice report?"
+        message="The invoice number, vehicle and any photos you haven't sent will be cleared from this report."
+        cancelText="Keep it"
+        confirmText="Remove"
+        confirmVariant="danger"
+      />
 
       <div className="px-5">
         {driverTripsQuery.isLoading ? (

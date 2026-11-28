@@ -28,7 +28,7 @@ import { PRE_RIDE_STEP_LOCK_ENABLED } from "@/lib/utils/checklistNavigation";
 import { isChecklistPhotoUploaded, pickSubmittedImages, toChecklistUploadedPhoto } from "@/lib/utils/checklistPhotos";
 import type { ChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
 import { readChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
-import { toLagosDate } from "@/lib/utils/lagosTime";
+import { getNewPreRideScope } from "@/lib/utils/pendingInvoiceReport";
 import { usePersistentIdempotencyKey } from "@/lib/utils/persistentIdempotencyKey";
 import { useToast } from "@/providers/ToastProvider";
 
@@ -55,8 +55,11 @@ export default function ChecklistStep2Page() {
   const activeTrackerId = searchParams.get("trackerId")?.trim() ?? "";
   const currentUserQuery = useCurrentUser();
   const currentUserId = currentUserQuery.data?.data.userId?.trim() ?? "";
-  const [vehicleSelection, setVehicleSelection] = useState<ChecklistVehicleSelection>();
-  const newChecklistScope = currentUserId ? `${currentUserId}-${toLagosDate(new Date())}` : "";
+  // undefined until read, null when the driver picked no invoice vehicle.
+  const [vehicleSelection, setVehicleSelection] = useState<ChecklistVehicleSelection | null>();
+  // Empty until the saved pick is read, so photos are never filed under the wrong report.
+  const newChecklistScope =
+    currentUserId && vehicleSelection !== undefined ? getNewPreRideScope(currentUserId, vehicleSelection) : "";
   const idempotencyKey = usePersistentIdempotencyKey(
     activeTrackerId
       ? `pre-ride-exterior-${activeTrackerId}`
@@ -105,7 +108,7 @@ export default function ChecklistStep2Page() {
   const isDamageStep = current === stepOrder.length - 1;
 
   useEffect(() => {
-    setVehicleSelection(readChecklistVehicleSelection(currentUserId));
+    if (currentUserId) setVehicleSelection(readChecklistVehicleSelection(currentUserId) ?? null);
   }, [currentUserId]);
 
   // A new report needs a vehicle: send the driver back to step 1, which explains why.
