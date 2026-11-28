@@ -66,21 +66,39 @@ export const PilotReportList = ({
 );
 
 /**
- * Today's unstarted Pre-Ride when the server doesn't list it (no trip it knows
- * of). Offered, not required: only the server's list marks or blocks.
+ * Today's report when the server doesn't list it, worked out from today's
+ * checklist. No Required label and no blocking: only the server's list does that.
  */
-export const OptionalPreRideCard = ({ onOpen }: { onOpen: () => void }) => (
-  <button type="button" onClick={onOpen} className="card pressable flex w-full items-center gap-3 p-4 text-left">
-    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-soft text-[#3538CD] dark:text-accent">
-      <ClipboardList size={20} />
-    </span>
-    <span className="min-w-0 flex-1">
-      <span className="text-body block font-semibold text-text">Pre-Ride Pilot Report</span>
-      <span className="text-footnote mt-0.5 block text-text-3">Complete this before your first ride today.</span>
-    </span>
-    <ChevronRight size={20} className="shrink-0 text-text-4" />
-  </button>
-);
+export const UnlistedReportCard = ({
+  kind,
+  detail,
+  onOpen,
+}: {
+  kind: OutstandingPilotReport["kind"];
+  detail: string;
+  onOpen: () => void;
+}) => {
+  const isPre = kind === "PRE_RIDE";
+
+  return (
+    <button type="button" onClick={onOpen} className="card pressable flex w-full items-center gap-3 p-4 text-left">
+      <span
+        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+          isPre ? "bg-surface-soft text-[#3538CD] dark:text-accent" : "bg-warning-soft text-warning-text"
+        }`}
+      >
+        {isPre ? <ClipboardList size={20} /> : <Flag size={20} />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="text-body block font-semibold text-text">
+          {isPre ? "Pre-Ride Pilot Report" : "Post-Ride Pilot Report"}
+        </span>
+        <span className="text-footnote mt-0.5 block text-text-3">{detail}</span>
+      </span>
+      <ChevronRight size={20} className="shrink-0 text-text-4" />
+    </button>
+  );
+};
 
 /** "Finish these to start work" banner above a blocking list. */
 export const PilotReportBlockedBanner = ({ message }: { message?: string | null }) => (
@@ -89,7 +107,7 @@ export const PilotReportBlockedBanner = ({ message }: { message?: string | null 
     <div className="min-w-0">
       <p className="text-callout font-semibold text-danger-text">Finish your pilot reports to start work</p>
       <p className="text-footnote mt-0.5 text-danger-text/85">
-        {message ?? "Trips and payments open again once they're sent."}
+        {message ?? "Check-in and starting a ride open again once they're sent."}
       </p>
     </div>
   </div>

@@ -61,7 +61,3 @@ export const pilotReportRoute = (report: OutstandingPilotReport) => {
 
   return trackerId ? `/checklist/intro?trackerId=${encodeURIComponent(trackerId)}` : "/checklist/intro";
 };
-
-/** Screens that are work, closed while a blocking report is owed. */
-export const isPilotReportGatedPath = (pathname: string) =>
-  pathname === "/trips" || pathname === "/payments" || pathname.startsWith("/payments/");

@@ -15,7 +15,7 @@ import { CardSkeleton } from "@/components/ui/Skeleton";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { useOutstandingPilotReports, useTodayChecklist } from "@/lib/api/hooks/usePreRideChecklist";
-import { OptionalPreRideCard, PilotReportBlockedBanner, PilotReportList } from "@/components/checklist/PilotReportList";
+import { PilotReportBlockedBanner, PilotReportList, UnlistedReportCard } from "@/components/checklist/PilotReportList";
 import { usePilotReportGate } from "@/providers/PilotReportGateProvider";
 import { useDriverTripStatistics, useDriverTrips } from "@/lib/api/hooks/useTrips";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
@@ -121,6 +121,17 @@ export default function HomePage() {
     isPreRideUnlisted && todayChecklistState === "PRE_TRIP_IN_PROGRESS" ? todayChecklistTrackerId : undefined;
   const showOptionalPreRide = isPreRideUnlisted && todayChecklistState === "NOT_STARTED" && !pendingInvoice;
 
+  // A sent Pre-Ride always needs its Post-Ride. Matched by report, so a missed
+  // one from an earlier day doesn't hide today's.
+  const unlistedPostRideTrackerId =
+    !pilotReports.isLoading &&
+    (todayChecklistState === "PRE_TRIP_COMPLETED" || todayChecklistState === "POST_TRIP_IN_PROGRESS") &&
+    !owedReports.some(
+      (report) => report.kind === "POST_RIDE" && report.checklistTrackerId === todayChecklistTrackerId,
+    )
+      ? todayChecklistTrackerId
+      : undefined;
+
   const openOptionalPreRide = () => {
     router.push(
       todayChecklistTrackerId
@@ -219,14 +230,38 @@ export default function HomePage() {
         </div>
       )}
 
-      {(owedReports.length > 0 || showInvoiceReport || showOptionalPreRide || unlistedTrackerId) && (
+      {(owedReports.length > 0 ||
+        showInvoiceReport ||
+        showOptionalPreRide ||
+        unlistedTrackerId ||
+        unlistedPostRideTrackerId) && (
         <section className="mb-5 space-y-3 px-5" aria-label="Pilot reports">
-          {(owedReports.length > 0 || showOptionalPreRide) && <p className="text-eyebrow text-text-3">Pilot reports</p>}
+          {(owedReports.length > 0 || showOptionalPreRide || unlistedPostRideTrackerId) && <p className="text-eyebrow text-text-3">Pilot reports</p>}
           {outstanding?.blocking && <PilotReportBlockedBanner message={outstanding.message} />}
 
           {continueTrackerId && <ReportContinueCard trackerId={continueTrackerId} />}
 
-          {showOptionalPreRide && <OptionalPreRideCard onOpen={openOptionalPreRide} />}
+          {showOptionalPreRide && (
+            <UnlistedReportCard
+              kind="PRE_RIDE"
+              detail="Complete this before your first ride today."
+              onOpen={openOptionalPreRide}
+            />
+          )}
+
+          {unlistedPostRideTrackerId && (
+            <UnlistedReportCard
+              kind="POST_RIDE"
+              detail={
+                todayChecklistState === "POST_TRIP_IN_PROGRESS"
+                  ? "Started. Finish and send it."
+                  : "Required. Do this after your last trip."
+              }
+              onOpen={() =>
+                router.push(`/checklist/intro?flow=postRide&trackerId=${encodeURIComponent(unlistedPostRideTrackerId)}`)
+              }
+            />
+          )}
 
           {pendingInvoice && (
             <InvoiceContinueCard
