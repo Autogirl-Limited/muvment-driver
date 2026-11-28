@@ -13,7 +13,8 @@ import { useOutstandingPilotReports } from "@/lib/api/hooks/usePreRideChecklist"
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import type { OutstandingPilotReport, OutstandingPilotReports } from "@/lib/api/types";
 import { isPilotReportGatedPath, isPilotReportsRequiredError, pilotReportRoute } from "@/lib/pilotReports/outstanding";
-import { clearChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
+import { readChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
+import { PENDING_INVOICE_RESUME_ROUTE } from "@/lib/utils/pendingInvoiceReport";
 
 interface PilotReportGate {
   outstanding?: OutstandingPilotReports;
@@ -100,9 +101,11 @@ export const PilotReportGateProvider = ({ children }: { children: ReactNode }) =
     (report: OutstandingPilotReport) => {
       setOpening(report);
       setSheetOpen(false);
-      // A fresh Pre-Ride report starts from the vehicle step, not a stale pick.
-      if (report.kind === "PRE_RIDE" && !report.checklistTrackerId) clearChecklistVehicleSelection(userId);
-      router.push(pilotReportRoute(report));
+      // An invoice report already begun today is that unstarted Pre-Ride: resume
+      // it rather than losing the pick. Saved picks expire with the day.
+      const resumesInvoice =
+        report.kind === "PRE_RIDE" && !report.checklistTrackerId && Boolean(readChecklistVehicleSelection(userId));
+      router.push(resumesInvoice ? PENDING_INVOICE_RESUME_ROUTE : pilotReportRoute(report));
       window.setTimeout(() => setOpening(null), 1_500);
     },
     [router, userId],

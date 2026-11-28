@@ -13,7 +13,7 @@ import { useDriverTrips } from "@/lib/api/hooks/useTrips";
 import { useCurrentUser } from "@/lib/api/hooks/useUsers";
 import type { ChecklistInvoiceVehicle } from "@/lib/api/types";
 import { getPreRideStarterStepRoute } from "@/lib/utils/checklistNavigation";
-import { writeChecklistVehicleSelection } from "@/lib/utils/checklistVehicleSelection";
+import { saveInvoiceSelection } from "@/lib/utils/pendingInvoiceReport";
 import { getTripAssignedVehicle } from "@/lib/utils/pilotReports";
 
 export default function ChecklistInvoicePage() {
@@ -61,7 +61,7 @@ export default function ChecklistInvoicePage() {
   const startReport = () => {
     if (!selectedVehicle || !currentUserId || todayState !== "NOT_STARTED") return;
 
-    writeChecklistVehicleSelection(currentUserId, {
+    saveInvoiceSelection(currentUserId, {
       invoiceNumber: normalizedInvoiceNumber,
       vehicle: selectedVehicle,
     });
