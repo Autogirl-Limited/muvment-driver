@@ -65,6 +65,23 @@ export const PilotReportList = ({
   </ul>
 );
 
+/**
+ * Today's unstarted Pre-Ride when the server doesn't list it (no trip it knows
+ * of). Offered, not required: only the server's list marks or blocks.
+ */
+export const OptionalPreRideCard = ({ onOpen }: { onOpen: () => void }) => (
+  <button type="button" onClick={onOpen} className="card pressable flex w-full items-center gap-3 p-4 text-left">
+    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-soft text-[#3538CD] dark:text-accent">
+      <ClipboardList size={20} />
+    </span>
+    <span className="min-w-0 flex-1">
+      <span className="text-body block font-semibold text-text">Pre-Ride Pilot Report</span>
+      <span className="text-footnote mt-0.5 block text-text-3">Complete this before your first ride today.</span>
+    </span>
+    <ChevronRight size={20} className="shrink-0 text-text-4" />
+  </button>
+);
+
 /** "Finish these to start work" banner above a blocking list. */
 export const PilotReportBlockedBanner = ({ message }: { message?: string | null }) => (
   <div className="flex items-start gap-3 rounded-2xl bg-danger-soft px-4 py-3" role="alert">
